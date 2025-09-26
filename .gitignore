@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.venv
+venv/
+.env.*
+*.log
+
+# Streamlit
+.streamlit/secrets.toml
+.streamlit/credentials.toml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+data/*.xlsx
+data/*.parquet
