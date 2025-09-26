@@ -1,24 +1,29 @@
-# DAR Global — CEO Executive Dashboard 
+# DAR Global — CEO Executive Dashboard (SQL backend)
 
-This repo uses the new CSV suite placed under `data/` and normalizes them to the app’s canonical schema, so all pages and KPIs keep working consistently.  
+This app connects directly to Microsoft SQL Server using Streamlit’s st.connection, with credentials stored in `.streamlit/secrets.toml` and never committed to Git.
 
-## Quick start
-1. Create folder and copy files:
-   - Place `app.py`, `requirements.txt`, `.gitignore`, `README.md` in the repo root.  
-   - Put all CSVs into `data/` (Lead.csv, LeadCallRecord.csv, Agents.csv, LeadSchedule.csv, LeadTransaction.csv, LeadStage.csv, CallStatus.csv, Country.csv, TaskStatus.csv, TaskType.csv, LeadStatus.csv, LeadSource.csv, LeadScoring.csv, CallSentiment.csv, TimezoneInfo.csv, CityRegion.csv, Priority.csv, MeetingStatus.csv, AgentMeetingAssignment.csv).  
+## Quick start (local)
+1. Create a virtualenv and install:
+   pip install -r requirements.txt
+2. Create `.streamlit/secrets.toml`:
+   [connections.sql]
+   dialect = "mssql"
+   driver  = "pyodbc"
+   host    = "auto.resourceplus.app"
+   database = "Data_Lead"
+   username = "sa"
+   password = "********"
 
-2. Local run
-pip install -r requirements.txt
-streamlit run app.py
+   [connections.sql.query]
+   driver = "ODBC Driver 17 for SQL Server"
+   encrypt = "yes"
+   trustservercertificate = "no"
+3. Run:
+   streamlit run app.py
+4. If no data appears, widen the sidebar date range and confirm the Debug expander shows valid min/max dates.
 
-3. GitHub push
-git init
-git add .
-git commit -m "Initial commit: DAR Global dashboard (new dataset)"
-git branch -M main
-git remote add origin https://github.com/<your-username>/dar-global-exec-dashboard-new.git
-git push -u origin main
+## Deploy (Streamlit Community Cloud)
+- Push code to GitHub (secrets.toml is ignored by .gitignore).
+- In the app’s Settings → Advanced → Secrets, paste the same TOML values used locally.
 
-
-4. Streamlit Cloud
 - Connect the repo, set main file to `app.py`, and deploy. 
