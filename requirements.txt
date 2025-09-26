@@ -1,6 +1,10 @@
-streamlit>=1.28.0
-plotly>=5.17.0
-pandas>=2.0.0
-numpy>=1.24.0
-python-dateutil>=2.8.2
-pytz>=2023.3
+streamlit>=1.28.0 [kept]
+plotly>=5.17.0 [kept]
+pandas>=2.0.0 [kept]
+numpy>=1.24.0 [kept]
+python-dateutil>=2.8.2 [kept]
+pytz>=2023.3 [kept]
+sqlalchemy>=2.0 [needed by st.connection SQL]
+pyodbc>=4.0.35 [SQL Server DBAPI driver]
+streamlit-option-menu>=0.3.6 [if used for the nav bar]
+scikit-learn>=1.3.0 [only if ML code paths are enabled]
