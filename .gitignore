@@ -1,0 +1,83 @@
+# -----------------------------
+# Python / build artifacts
+# -----------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+*.egg
+build/
+dist/
+pip-wheel-metadata/
+*.manifest
+*.spec
+
+# Byte-compiled and backup files
+*~
+*.bak
+*.tmp
+*.swp
+*.swo
+
+# -----------------------------
+# Environments
+# -----------------------------
+.env
+.env.*
+.venv/
+venv/
+ENV/
+env/
+
+# -----------------------------
+# Logs / test caches / coverage
+# -----------------------------
+*.log
+logs/
+pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# -----------------------------
+# Streamlit
+# (Keep config, ignore secrets/credentials)
+# -----------------------------
+.streamlit/secrets.toml
+.streamlit/credentials.toml
+# Optional local runtime state/cache (safe to ignore)
+.streamlit/cache/
+.streamlit/state/
+
+# -----------------------------
+# IDE / Editor
+# -----------------------------
+.vscode/
+.idea/
+*.code-workspace
+
+# -----------------------------
+# OS-specific
+# -----------------------------
+.DS_Store
+Thumbs.db
+
+# -----------------------------
+# Data (ignore local data; keep placeholders)
+# -----------------------------
+data/**/*.csv
+data/**/*.tsv
+data/**/*.xlsx
+data/**/*.parquet
+data/**/*.json
+data/**/*.sqlite
+# Keep placeholder/docs so folder exists in repo
+!data/.gitkeep
+!data/README.md
+
+# -----------------------------
+# Notebooks (optional)
+# -----------------------------
+.ipynb_checkpoints/
