@@ -1,4 +1,4 @@
-# app.py — DAR Global CEO Dashboard (SQL Server backend, robust fetch + table mapping)
+# app.py — DAR Global CEO Dashboard (SQL Server via st.connection + robust debug)
 
 import streamlit as st
 import plotly.express as px
@@ -6,7 +6,6 @@ import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta, date
-import os
 
 # Optional horizontal nav
 try:
@@ -18,12 +17,7 @@ except Exception:
 # -----------------------------------------------------------------------------
 # Page config and theme
 # -----------------------------------------------------------------------------
-st.set_page_config(
-    page_title="DAR Global - Executive Dashboard",
-    page_icon="🏗️",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="DAR Global - Executive Dashboard", page_icon="🏗️", layout="wide", initial_sidebar_state="expanded")
 
 EXEC_PRIMARY="#DAA520"; EXEC_BLUE="#1E90FF"; EXEC_GREEN="#32CD32"; EXEC_DANGER="#DC143C"; EXEC_BG="#1a1a1a"; EXEC_SURFACE="#2d2d2d"
 
@@ -52,6 +46,22 @@ div[data-testid="metric-container"] {{
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
+# Secrets / driver visibility (to diagnose TLS/URL issues quickly)
+# -----------------------------------------------------------------------------
+with st.expander("Debug: connection config and drivers", expanded=False):
+    cfg = st.secrets.get("connections", {}).get("sql", {})
+    url_present = isinstance(cfg.get("url"), str) and len(cfg.get("url")) > 0
+    st.write("connections.sql keys:", list(cfg.keys()))
+    st.write("Using single-line url:", url_present)
+    if url_present:
+        st.write("url prefix:", cfg["url"][:80] + " ...")
+    try:
+        import pyodbc
+        st.write("ODBC drivers:", pyodbc.drivers())
+    except Exception as e:
+        st.write("pyodbc import/driver list error:", e)
+
+# -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
 def format_currency(v):
@@ -63,100 +73,76 @@ def format_number(v):
     return f"{v/1e6:.1f}M" if v>=1e6 else (f"{v/1e3:.1f}K" if v>=1e3 else f"{v:,.0f}")
 
 # -----------------------------------------------------------------------------
-# Database loader (robust; table names from Secrets; error surfacing)
+# Database loader (table names configurable via Secrets; errors surfaced)
 # -----------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def load_data(_unused: str = "data"):
-    """
-    Load required tables using Streamlit's st.connection and names provided via
-    [connections.sql.tables] in Secrets, falling back to dbo defaults if not set.
-    """
-    # Create the SQL connection
-    conn = st.connection("sql")  # reads .streamlit/secrets.toml [web:9][file:192]
+    # Build Streamlit SQL connection — it will use connections.sql.url if present
+    # which is the recommended way to pass ODBC attributes like Encrypt/TrustServerCertificate.  # [docs]
+    from streamlit.connections import SQLConnection
+    conn = st.connection("sql", type=SQLConnection)
 
-    # Helper to get fully-qualified table from Secrets
-    tbl_cfg = st.secrets.get("connections", {}).get("sql", {}).get("tables", {})  # optional mapping [web:3][file:192]
-    def get_tbl(key, default):
-        return tbl_cfg.get(key, default)
-
-    # Fetch that surfaces any SQL error in the UI
-    def fetch(table_fqn, label=None, limit=None):
-        label = label or table_fqn
-        top = f"TOP {int(limit)} " if limit else ""
-        try:
-            return conn.query(f"SELECT {top}* FROM {table_fqn}", ttl=600)  # SQLConnection/query [web:9]
-        except Exception as e:
-            st.error(f"Query failed for {label}: {e}")
-            return None
-
-    # Optional: show which server/db we reached
+    # Quick connectivity check (shows server and db or surfaces TLS error)
     try:
         info = conn.query("SELECT @@SERVERNAME AS server, DB_NAME() AS db", ttl=60)
-        st.caption(f"Connected to {info.iloc[0]['server']} / {info.iloc[0]['db']}")  # confirms DB context [web:9]
+        st.caption(f"Connected to {info.iloc[0]['server']} / {info.iloc[0]['db']}")
     except Exception as e:
         st.error(f"Connectivity check failed: {e}")
         return {}
 
+    # Table name overrides (optional) from Secrets
+    tbl_cfg = st.secrets.get("connections", {}).get("sql", {}).get("tables", {})
+    def T(key, default):
+        return tbl_cfg.get(key, default)
+
+    def fetch(table_fqn, label=None, limit=None):
+        label = label or table_fqn
+        top = f"TOP {int(limit)} " if limit else ""
+        try:
+            return conn.query(f"SELECT {top}* FROM {table_fqn}", ttl=600)
+        except Exception as e:
+            st.error(f"Query failed for {label}: {e}")
+            return None
+
     ds = {}
+    ds["leads"]        = fetch(T("leads","dbo.Lead"), "leads")
+    ds["agents"]       = fetch(T("agents","dbo.Agents"), "agents")
+    ds["calls"]        = fetch(T("calls","dbo.LeadCallRecord"), "calls")
+    ds["schedules"]    = fetch(T("schedules","dbo.LeadSchedule"), "schedules")
+    ds["transactions"] = fetch(T("transactions","dbo.LeadTransaction"), "transactions")
 
-    # Base tables (use Secrets override if provided)
-    ds["leads"]        = fetch(get_tbl("leads",        "dbo.Lead"),            "leads")
-    ds["agents"]       = fetch(get_tbl("agents",       "dbo.Agents"),          "agents")
-    ds["calls"]        = fetch(get_tbl("calls",        "dbo.LeadCallRecord"),  "calls")
-    ds["schedules"]    = fetch(get_tbl("schedules",    "dbo.LeadSchedule"),    "schedules")
-    ds["transactions"] = fetch(get_tbl("transactions", "dbo.LeadTransaction"), "transactions")
+    for k, default in [
+        ("countries","dbo.Country"), ("lead_stages","dbo.LeadStage"), ("lead_statuses","dbo.LeadStatus"),
+        ("lead_sources","dbo.LeadSource"), ("lead_scoring","dbo.LeadScoring"),
+        ("call_statuses","dbo.CallStatus"), ("sentiments","dbo.CallSentiment"),
+        ("task_types","dbo.TaskType"), ("task_statuses","dbo.TaskStatus"),
+        ("city_region","dbo.CityRegion"), ("timezone_info","dbo.TimezoneInfo"),
+        ("priority","dbo.Priority"), ("meeting_status","dbo.MeetingStatus"),
+        ("agent_meeting_assignment","dbo.AgentMeetingAssignment"),
+    ]:
+        ds[k] = fetch(T(k, default), k)
 
-    # Lookups
-    ds["countries"]    = fetch(get_tbl("countries",    "dbo.Country"))
-    ds["lead_stages"]  = fetch(get_tbl("lead_stages",  "dbo.LeadStage"))
-    ds["lead_statuses"]= fetch(get_tbl("lead_statuses","dbo.LeadStatus"))
-    ds["lead_sources"] = fetch(get_tbl("lead_sources", "dbo.LeadSource"))
-    ds["lead_scoring"] = fetch(get_tbl("lead_scoring", "dbo.LeadScoring"))
-    ds["call_statuses"]= fetch(get_tbl("call_statuses","dbo.CallStatus"))
-    ds["sentiments"]   = fetch(get_tbl("sentiments",   "dbo.CallSentiment"))
-    ds["task_types"]   = fetch(get_tbl("task_types",   "dbo.TaskType"))
-    ds["task_statuses"]= fetch(get_tbl("task_statuses","dbo.TaskStatus"))
-    ds["city_region"]  = fetch(get_tbl("city_region",  "dbo.CityRegion"))
-    ds["timezone_info"]= fetch(get_tbl("timezone_info","dbo.TimezoneInfo"))
-    ds["priority"]     = fetch(get_tbl("priority",     "dbo.Priority"))
-    ds["meeting_status"]=fetch(get_tbl("meeting_status","dbo.MeetingStatus"))
-    ds["agent_meeting_assignment"] = fetch(get_tbl("agent_meeting_assignment","dbo.AgentMeetingAssignment"))
-
-    # ---------- Normalization helpers ----------
+    # Normalize and map date columns for filters
     def norm(df):
         if df is None: return None
         out = df.copy()
-        out.columns = (
-            out.columns
-            .str.strip()
-            .str.replace(r"[^\w]+","_", regex=True)
-            .str.replace("__+","_", regex=True)
-        )
+        out.columns = out.columns.str.strip().str.replace(r"[^\w]+","_", regex=True)
         return out
 
-    def coerce_dt(series):
-        return pd.to_datetime(series, errors="coerce")  # robust parsing for filters/grouping [web:169]
+    def coerce_dt(s): return pd.to_datetime(s, errors="coerce")
 
-    # ---------- Leads: ensure CreatedOn exists ----------
     if ds["leads"] is not None:
         df = norm(ds["leads"])
-        # If the real column is different, map it to CreatedOn
         for c in ["CreatedOn","CreatedDate","CreateDate","CreatedAt","created_on","createddate","created"]:
             if c in df.columns:
                 if c != "CreatedOn": df["CreatedOn"] = df[c]
                 break
-        for need, default in [
-            ("LeadStageId", pd.NA), ("LeadStatusId", pd.NA), ("AssignedAgentId", pd.NA),
-            ("EstimatedBudget", 0.0), ("IsActive", 1)
-        ]:
-            if need not in df.columns: df[need] = default
         if "EstimatedBudget" in df.columns:
             df["EstimatedBudget"] = pd.to_numeric(df["EstimatedBudget"], errors="coerce").fillna(0.0)
         if "CreatedOn" in df.columns:
             df["CreatedOn"] = coerce_dt(df["CreatedOn"])
         ds["leads"] = df
 
-    # ---------- Calls: ensure CallDateTime exists ----------
     if ds["calls"] is not None:
         df = norm(ds["calls"])
         for c in ["CallDateTime","CallDatetime","CallTime","CallDate","created_at","createdon"]:
@@ -167,7 +153,6 @@ def load_data(_unused: str = "data"):
             df["CallDateTime"] = coerce_dt(df["CallDateTime"])
         ds["calls"] = df
 
-    # ---------- Schedules: ensure ScheduledDate exists ----------
     if ds["schedules"] is not None:
         df = norm(ds["schedules"])
         for c in ["ScheduledDate","ScheduleDate","StartDate","StartDateTime","DueDate"]:
@@ -180,7 +165,6 @@ def load_data(_unused: str = "data"):
             df["CompletedDate"] = coerce_dt(df["CompletedDate"])
         ds["schedules"] = df
 
-    # ---------- Transactions: ensure TransactionDate exists ----------
     if ds["transactions"] is not None:
         df = norm(ds["transactions"])
         for c in ["TransactionDate","TxnDate","CreatedOn","CreatedDate","Date"]:
@@ -191,12 +175,9 @@ def load_data(_unused: str = "data"):
             df["TransactionDate"] = coerce_dt(df["TransactionDate"])
         ds["transactions"] = df
 
-    # ---------- Normalize lookups ----------
-    for lk in [
-        "countries","lead_stages","lead_statuses","lead_sources","lead_scoring",
-        "call_statuses","sentiments","task_types","task_statuses","city_region",
-        "timezone_info","priority","meeting_status","agent_meeting_assignment"
-    ]:
+    for lk in ["countries","lead_stages","lead_statuses","lead_sources","lead_scoring",
+               "call_statuses","sentiments","task_types","task_statuses","city_region",
+               "timezone_info","priority","meeting_status","agent_meeting_assignment"]:
         if ds.get(lk) is not None:
             ds[lk] = norm(ds[lk])
 
@@ -220,30 +201,22 @@ with st.sidebar:
     st.markdown("## Filters")
     grain = st.radio("Time grain", ["Week","Month","Year"], index=1, horizontal=True)
 
-data = load_data("data")  # signature preserved for cache key [web:9]
+data = load_data("data")
 
-# Debug expander: counts and date ranges (helps verify table names + data span)
+# Debug ranges to confirm slider overlap
 with st.expander("Debug: row counts and ranges", expanded=False):
-    def mm(s):
-        s = pd.to_datetime(s, errors="coerce")
-        return f"{s.min()} → {s.max()}"
+    def mm(s): s=pd.to_datetime(s, errors="coerce"); return f"{s.min()} → {s.max()}"
     st.write({k: (0 if (v is None) else len(v)) for k,v in data.items()})
-    if data.get("leads") is not None and "CreatedOn" in data["leads"].columns:
-        st.write("Leads CreatedOn:", mm(data["leads"]["CreatedOn"]))
-    if data.get("calls") is not None and "CallDateTime" in data["calls"].columns:
-        st.write("Calls CallDateTime:", mm(data["calls"]["CallDateTime"]))
-    if data.get("schedules") is not None and "ScheduledDate" in data["schedules"].columns:
-        st.write("Schedules ScheduledDate:", mm(data["schedules"]["ScheduledDate"]))
+    if data.get("leads") is not None and "CreatedOn" in data["leads"].columns: st.write("Leads CreatedOn:", mm(data["leads"]["CreatedOn"]))
+    if data.get("calls") is not None and "CallDateTime" in data["calls"].columns: st.write("Calls CallDateTime:", mm(data["calls"]["CallDateTime"]))
+    if data.get("schedules") is not None and "ScheduledDate" in data["schedules"].columns: st.write("Schedules ScheduledDate:", mm(data["schedules"]["ScheduledDate"]))
 
 def filter_by_date(datasets, grain_sel: str):
     out = dict(datasets)
     cands=[]
-    if out.get("leads") is not None and "CreatedOn" in out["leads"].columns:
-        cands.append(pd.to_datetime(out["leads"]["CreatedOn"], errors="coerce"))
-    if out.get("calls") is not None and "CallDateTime" in out["calls"].columns:
-        cands.append(pd.to_datetime(out["calls"]["CallDateTime"], errors="coerce"))
-    if out.get("schedules") is not None and "ScheduledDate" in out["schedules"].columns:
-        cands.append(pd.to_datetime(out["schedules"]["ScheduledDate"], errors="coerce"))
+    if out.get("leads") is not None and "CreatedOn" in out["leads"].columns: cands.append(pd.to_datetime(out["leads"]["CreatedOn"], errors="coerce"))
+    if out.get("calls") is not None and "CallDateTime" in out["calls"].columns: cands.append(pd.to_datetime(out["calls"]["CallDateTime"], errors="coerce"))
+    if out.get("schedules") is not None and "ScheduledDate" in out["schedules"].columns: cands.append(pd.to_datetime(out["schedules"]["ScheduledDate"], errors="coerce"))
 
     if cands:
         gmin=min([c.min() for c in cands if c is not None]).date()
@@ -254,64 +227,41 @@ def filter_by_date(datasets, grain_sel: str):
     with st.sidebar:
         preset = st.select_slider("Quick range", ["Last 7 days","Last 30 days","Last 90 days","MTD","YTD","Custom"], value="Last 30 days")
         today=date.today()
-        if preset=="Last 7 days":
-            default_start, default_end = max(gmin, today-timedelta(days=6)), today
-        elif preset=="Last 30 days":
-            default_start, default_end = max(gmin, today-timedelta(days=29)), today
-        elif preset=="Last 90 days":
-            default_start, default_end = max(gmin, today-timedelta(days=89)), today
-        elif preset=="MTD":
-            default_start, default_end = max(gmin, today.replace(day=1)), today
-        elif preset=="YTD":
-            default_start, default_end = max(gmin, date(today.year,1,1)), today
-        else:
-            default_start, default_end = gmin, gmax
+        if preset=="Last 7 days": default_start, default_end = max(gmin, today-timedelta(days=6)), today
+        elif preset=="Last 30 days": default_start, default_end = max(gmin, today-timedelta(days=29)), today
+        elif preset=="Last 90 days": default_start, default_end = max(gmin, today-timedelta(days=89)), today
+        elif preset=="MTD": default_start, default_end = max(gmin, today.replace(day=1)), today
+        elif preset=="YTD": default_start, default_end = max(gmin, date(today.year,1,1)), today
+        else: default_start, default_end = gmin, gmax
         step = timedelta(days=1 if grain_sel in ["Week","Month"] else 7)
         date_start, date_end = st.slider("Date range", min_value=gmin, max_value=gmax, value=(default_start, default_end), step=step)
 
     def add_period(dt):
-        if grain_sel=="Week":
-            return dt.dt.to_period("W").apply(lambda p: p.start_time.date())
-        if grain_sel=="Month":
-            return dt.dt.to_period("M").apply(lambda p: p.start_time.date())
+        if grain_sel=="Week": return dt.dt.to_period("W").apply(lambda p: p.start_time.date())
+        if grain_sel=="Month": return dt.dt.to_period("M").apply(lambda p: p.start_time.date())
         return dt.dt.to_period("Y").apply(lambda p: p.start_time.date())
 
-    # Leads
     if out.get("leads") is not None and "CreatedOn" in out["leads"].columns:
-        dt=pd.to_datetime(out["leads"]["CreatedOn"], errors="coerce")
-        mask=dt.dt.date.between(date_start, date_end)
-        out["leads"]=out["leads"].loc[mask].copy()
-        out["leads"]["period"]=add_period(dt.loc[mask])
+        dt=pd.to_datetime(out["leads"]["CreatedOn"], errors="coerce"); mask=dt.dt.date.between(date_start, date_end)
+        out["leads"]=out["leads"].loc[mask].copy(); out["leads"]["period"]=add_period(dt.loc[mask])
 
-    # Calls
     if out.get("calls") is not None and "CallDateTime" in out["calls"].columns:
-        dt=pd.to_datetime(out["calls"]["CallDateTime"], errors="coerce")
-        mask=dt.dt.date.between(date_start, date_end)
-        out["calls"]=out["calls"].loc[mask].copy()
-        out["calls"]["period"]=add_period(dt.loc[mask])
+        dt=pd.to_datetime(out["calls"]["CallDateTime"], errors="coerce"); mask=dt.dt.date.between(date_start, date_end)
+        out["calls"]=out["calls"].loc[mask].copy(); out["calls"]["period"]=add_period(dt.loc[mask])
 
-    # Schedules
     if out.get("schedules") is not None and "ScheduledDate" in out["schedules"].columns:
-        dt=pd.to_datetime(out["schedules"]["ScheduledDate"], errors="coerce")
-        mask=dt.dt.date.between(date_start, date_end)
-        out["schedules"]=out["schedules"].loc[mask].copy()
-        out["schedules"]["period"]=add_period(dt.loc[mask])
+        dt=pd.to_datetime(out["schedules"]["ScheduledDate"], errors="coerce"); mask=dt.dt.date.between(date_start, date_end)
+        out["schedules"]=out["schedules"].loc[mask].copy(); out["schedules"]["period"]=add_period(dt.loc[mask])
 
-    # Transactions
     if out.get("transactions") is not None and "TransactionDate" in out["transactions"].columns:
-        dt=pd.to_datetime(out["transactions"]["TransactionDate"], errors="coerce")
-        mask=dt.dt.date.between(date_start, date_end)
-        out["transactions"]=out["transactions"].loc[mask].copy()
-        out["transactions"]["period"]=add_period(dt.loc[mask])
+        dt=pd.to_datetime(out["transactions"]["TransactionDate"], errors="coerce"); mask=dt.dt.date.between(date_start, date_end)
+        out["transactions"]=out["transactions"].loc[mask].copy(); out["transactions"]["period"]=add_period(dt.loc[mask])
 
-    # AgentMeetingAssignment optional date filter (StartDateTime if present)
     if out.get("agent_meeting_assignment") is not None:
         ama = out["agent_meeting_assignment"].copy()
         cols_lower = {c.lower(): c for c in ama.columns}
         if "startdatetime" in cols_lower:
-            dtcol = cols_lower["startdatetime"]
-            dt = pd.to_datetime(ama[dtcol], errors="coerce")
-            mask = dt.dt.date.between(date_start, date_end)
+            dtcol = cols_lower["startdatetime"]; dt = pd.to_datetime(ama[dtcol], errors="coerce"); mask = dt.dt.date.between(date_start, date_end)
             out["agent_meeting_assignment"] = ama.loc[mask].copy()
 
     return out
@@ -321,11 +271,7 @@ fdata = filter_by_date(data, grain)
 # -----------------------------------------------------------------------------
 # Navigation
 # -----------------------------------------------------------------------------
-NAV = [
-    ("Executive","speedometer2","🎯 Executive Summary"),
-    ("Lead Status","people","📈 Lead Status"),
-    ("AI Calls","telephone","📞 AI Call Activity")
-]
+NAV = [("Executive","speedometer2","🎯 Executive Summary"),("Lead Status","people","📈 Lead Status"),("AI Calls","telephone","📞 AI Call Activity")]
 if HAS_OPTION_MENU:
     selected = option_menu(None, [n[0] for n in NAV], icons=[n[1] for n in NAV], orientation="horizontal", default_index=0,
                            styles={"container":{"padding":"0!important","background-color":"#0f1116"},
@@ -347,61 +293,39 @@ def show_executive_summary(d):
     if leads is None or len(leads)==0:
         st.info("No data available in the selected range."); return
 
-    # Determine 'Won' status id by name if available; fallback to 9
     won_status_id = 9
     if lead_statuses is not None and "statusname_e" in lead_statuses.columns:
-        match = lead_statuses.loc[lead_statuses["statusname_e"].str.lower()=="won"]
-        if not match.empty and "leadstatusid" in match.columns:
-            won_status_id = int(match.iloc[0]["leadstatusid"])
+        m = lead_statuses.loc[lead_statuses["statusname_e"].str.lower()=="won"]
+        if not m.empty and "leadstatusid" in m.columns: won_status_id = int(m.iloc[0]["leadstatusid"])
 
     st.subheader("Performance KPIs")
     today = pd.Timestamp.today().normalize()
-    week_start = today - pd.Timedelta(days=today.weekday())  # Monday
+    week_start = today - pd.Timedelta(days=today.weekday())
     month_start = today.replace(day=1)
     year_start = today.replace(month=1, day=1)
-    date_ranges = {
-        "Week to Date": (week_start, today),
-        "Month to Date": (month_start, today),
-        "Year to Date": (year_start, today),
-    }
+    date_ranges = {"Week to Date": (week_start, today), "Month to Date": (month_start, today), "Year to Date": (year_start, today)}
     cols = st.columns(3)
     for (label, (start, end)), col in zip(date_ranges.items(), cols):
-        # Leads in period
-        leads_period = leads.loc[
-            (pd.to_datetime(leads["CreatedOn"], errors="coerce") >= pd.Timestamp(start)) &
-            (pd.to_datetime(leads["CreatedOn"], errors="coerce") <= pd.Timestamp(end))
-        ] if "CreatedOn" in leads.columns else pd.DataFrame()
-
-        # Meetings scheduled (prefer LeadSchedule, fallback AMA)
+        leads_period = leads.loc[(pd.to_datetime(leads["CreatedOn"], errors="coerce") >= pd.Timestamp(start)) & (pd.to_datetime(leads["CreatedOn"], errors="coerce") <= pd.Timestamp(end))] if "CreatedOn" in leads.columns else pd.DataFrame()
         meetings_cnt = 0
         if schedules is not None and "ScheduledDate" in schedules.columns:
-            s = schedules.copy()
-            s["_dt"] = pd.to_datetime(s["ScheduledDate"], errors="coerce")
-            s = s[(s["_dt"]>=pd.Timestamp(start)) & (s["_dt"]<=pd.Timestamp(end))]
+            s = schedules.copy(); s["_dt"] = pd.to_datetime(s["ScheduledDate"], errors="coerce"); s = s[(s["_dt"]>=pd.Timestamp(start)) & (s["_dt"]<=pd.Timestamp(end))]
             meetings_cnt = int(s["LeadId"].nunique()) if "LeadId" in s.columns else len(s)
         elif ama is not None:
             m = ama.copy(); m.columns = m.columns.str.lower()
             if "startdatetime" in m.columns:
-                m["_dt"] = pd.to_datetime(m["startdatetime"], errors="coerce")
-                m = m[(m["_dt"]>=pd.Timestamp(start)) & (m["_dt"]<=pd.Timestamp(end))]
-                if "meetingstatusid" in m.columns:
-                    m = m[m["meetingstatusid"].isin({1,6})]
+                m["_dt"] = pd.to_datetime(m["startdatetime"], errors="coerce"); m = m[(m["_dt"]>=pd.Timestamp(start)) & (m["_dt"]<=pd.Timestamp(end))]
+                if "meetingstatusid" in m.columns: m = m[m["meetingstatusid"].isin({1,6})]
                 meetings_cnt = int(m["leadid"].nunique()) if "leadid" in m.columns else len(m)
-
         total_leads = int(len(leads_period))
         won_leads = int((leads_period["LeadStatusId"]==won_status_id).sum()) if "LeadStatusId" in leads_period.columns else 0
         conversion_rate = (won_leads/total_leads*100.0) if total_leads else 0.0
-
         with col:
             st.markdown(f"#### {label}")
-            st.markdown("**Total Leads**")
-            st.markdown(f"<span style='font-size:2rem;'>{total_leads}</span>", unsafe_allow_html=True)
-            st.markdown("**Conversion Rate**")
-            st.markdown(f"<span style='font-size:2rem;'>{conversion_rate:.1f}%</span>", unsafe_allow_html=True)
-            st.markdown("**Meetings Scheduled**")
-            st.markdown(f"<span style='font-size:2rem;'>{meetings_cnt}</span>", unsafe_allow_html=True)
+            st.markdown("**Total Leads**"); st.markdown(f"<span style='font-size:2rem;'>{total_leads}</span>", unsafe_allow_html=True)
+            st.markdown("**Conversion Rate**"); st.markdown(f"<span style='font-size:2rem;'>{conversion_rate:.1f}%</span>", unsafe_allow_html=True)
+            st.markdown("**Meetings Scheduled**"); st.markdown(f"<span style='font-size:2rem;'>{meetings_cnt}</span>", unsafe_allow_html=True)
 
-    # ---------------- Trend at a glance (indexed) ----------------
     st.markdown("---"); st.subheader("Trend at a glance")
     trend_style = st.radio("Trend style", ["Line","Bars","Bullet"], index=0, horizontal=True, key="__trend_style_exec")
 
@@ -422,9 +346,7 @@ def show_executive_summary(d):
 
     def _index(df):
         df=df.copy()
-        if df.empty:
-            df["idx"]=[]
-            return df
+        if df.empty: df["idx"]=[]; return df
         base = df["value"].iloc[0] if df["value"].iloc[0]!=0 else 1.0
         df["idx"]=(df["value"]/base)*100.0
         return df
@@ -436,8 +358,7 @@ def show_executive_summary(d):
         ymax=float(pd.Series(ys).max()) if len(ys) else 1
         pad=max(1.0,(ymax-ymin)*0.12); rng=[ymin-pad, ymax+pad]
         fig.update_layout(height=180, title=dict(text=title, x=0.01, font=dict(size=12, color="#cfcfcf")),
-                          margin=dict(l=6,r=6,t=24,b=8), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                          font_color="white", showlegend=False)
+                          margin=dict(l=6,r=6,t=24,b=8), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white", showlegend=False)
         fig.update_xaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)", tickfont=dict(color="#a8a8a8", size=10), nticks=4, ticks="outside")
         fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)", tickfont=dict(color="#a8a8a8", size=10), nticks=3, ticks="outside", range=rng)
         return fig
@@ -482,23 +403,18 @@ def show_executive_summary(d):
         with s3: st.plotly_chart(tile_bullet(rev_ts,"Revenue index",EXEC_GREEN), use_container_width=True)
         with s4: st.plotly_chart(tile_bullet(calls_ts,"Call success index","#7dd3fc"), use_container_width=True)
 
-    # ---------------- Lead conversion snapshot (funnel) ----------------
     st.markdown("---")
     st.subheader("Lead conversion snapshot")
-
     leads_df   = d.get("leads").copy()
     statuses   = d.get("lead_statuses")
     meetings   = d.get("agent_meeting_assignment")
 
-    def have(df, cols):
-        return (df is not None) and set(cols).issubset(df.columns)
-
+    def have(df, cols): return (df is not None) and set(cols).issubset(df.columns)
     def status_ids_by_name(names):
         if statuses is None: return set()
         s = statuses.copy(); s.columns = s.columns.str.lower()
         if not {"statusname_e","leadstatusid"}.issubset(s.columns): return set()
         return set(s.loc[s["statusname_e"].str.lower().isin([n.lower() for n in names]),"leadstatusid"].astype(int).tolist())
-
     def status_ids_by_stage(stage_no):
         if statuses is None: return set()
         s = statuses.copy(); s.columns = s.columns.str.lower()
@@ -509,12 +425,7 @@ def show_executive_summary(d):
     new_count  = int(cohort_ids.size)
 
     qualified_sid = status_ids_by_stage(2)
-    qualified_ids = pd.Index(
-        leads_df.loc[
-            have(leads_df, ["LeadStatusId","LeadId"]) & leads_df["LeadStatusId"].isin(qualified_sid),
-            "LeadId"
-        ].dropna().astype(int).unique()
-    ).intersection(cohort_ids)
+    qualified_ids = pd.Index(leads_df.loc[have(leads_df, ["LeadStatusId","LeadId"]) & leads_df["LeadStatusId"].isin(qualified_sid), "LeadId"].dropna().astype(int).unique()).intersection(cohort_ids)
     qualified_count = int(qualified_ids.size)
 
     meet_ids = pd.Index([])
@@ -528,51 +439,23 @@ def show_executive_summary(d):
     meeting_count = int(meet_ids.size)
 
     neg_sid = status_ids_by_name(["On Hold","Awaiting Budget"])
-    neg_ids = pd.Index(
-        leads_df.loc[
-            have(leads_df, ["LeadStatusId","LeadId"]) & leads_df["LeadStatusId"].isin(neg_sid),
-            "LeadId"
-        ].dropna().astype(int).unique()
-    ).intersection(meet_ids)
+    neg_ids = pd.Index(leads_df.loc[have(leads_df, ["LeadStatusId","LeadId"]) & leads_df["LeadStatusId"].isin(neg_sid), "LeadId"].dropna().astype(int).unique()).intersection(meet_ids)
     neg_count = int(neg_ids.size)
 
     won_sid = status_ids_by_name(["Won"])
-    signed_ids = pd.Index(
-        leads_df.loc[
-            have(leads_df, ["LeadStatusId","LeadId"]) & leads_df["LeadStatusId"].isin(won_sid),
-            "LeadId"
-        ].dropna().astype(int).unique()
-    ).intersection(meet_ids)
+    signed_ids = pd.Index(leads_df.loc[have(leads_df, ["LeadStatusId","LeadId"]) & leads_df["LeadStatusId"].isin(won_sid), "LeadId"].dropna().astype(int).unique()).intersection(meet_ids)
     signed_count = int(signed_ids.size)
 
     lost_sid = status_ids_by_name(["Lost"])
-    lost_ids = pd.Index(
-        leads_df.loc[
-            have(leads_df, ["LeadStatusId","LeadId"]) & leads_df["LeadStatusId"].isin(lost_sid),
-            "LeadId"
-        ].dropna().astype(int).unique()
-    ).intersection(meet_ids)
+    lost_ids = pd.Index(leads_df.loc[have(leads_df, ["LeadStatusId","LeadId"]) & leads_df["LeadStatusId"].isin(lost_sid), "LeadId"].dropna().astype(int).unique()).intersection(meet_ids)
     lost_count = int(lost_ids.size)
 
-    funnel_df = pd.DataFrame({
-        "Stage": ["New","Qualified","Meeting Scheduled","Negotiation","Contract Signed","Lost"],
-        "Count": [new_count, qualified_count, meeting_count, neg_count, signed_count, lost_count]
-    })
-
-    fig_funnel = px.funnel(
-        funnel_df, x="Count", y="Stage",
-        color_discrete_sequence=[EXEC_BLUE, EXEC_GREEN, EXEC_PRIMARY, "#FFA500", "#7CFC00", EXEC_DANGER]
-    )
-    fig_funnel.update_layout(
-        height=340,
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        font_color="white",
-        margin=dict(l=0, r=0, t=10, b=10)
-    )
+    funnel_df = pd.DataFrame({"Stage": ["New","Qualified","Meeting Scheduled","Negotiation","Contract Signed","Lost"],
+                              "Count": [new_count, qualified_count, meeting_count, neg_count, signed_count, lost_count]})
+    fig_funnel = px.funnel(funnel_df, x="Count", y="Stage", color_discrete_sequence=[EXEC_BLUE, EXEC_GREEN, EXEC_PRIMARY, "#FFA500", "#7CFC00", EXEC_DANGER])
+    fig_funnel.update_layout(height=340, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white", margin=dict(l=0, r=0, t=10, b=10))
     st.plotly_chart(fig_funnel, use_container_width=True)
 
-    # ---------------- Top markets ----------------
     st.markdown("---"); st.subheader("Top markets")
     if countries is not None and "CountryId" in leads.columns and "countryname_e" in countries.columns:
         geo = leads.groupby("CountryId").size().reset_index(name="Leads")
@@ -641,7 +524,6 @@ def show_lead_status(d):
         won = int((leads["LeadStatusId"]==won_id).sum()) if won_id is not None else 0
         disc_ids = statuses.loc[statuses["statusname_e"].str.contains("discussion", case=False, na=False), "leadstatusid"].tolist() if statuses is not None else []
         in_discuss = int(leads["LeadStatusId"].isin(disc_ids).sum()) if len(disc_ids) else 0
-        st.metric("In Discussion", format_number(in_discuss))
 
 # -----------------------------------------------------------------------------
 # Calls page (basic)
@@ -669,16 +551,11 @@ def show_calls(d):
 # Router
 # -----------------------------------------------------------------------------
 if HAS_OPTION_MENU:
-    if selected=="Executive":
-        show_executive_summary(fdata)
-    elif selected=="Lead Status":
-        show_lead_status(fdata)
-    elif selected=="AI Calls":
-        show_calls(fdata)
+    if selected=="Executive": show_executive_summary(fdata)
+    elif selected=="Lead Status": show_lead_status(fdata)
+    elif selected=="AI Calls": show_calls(fdata)
 else:
-    with tabs[0]:
-        show_executive_summary(fdata)
-    with tabs[1]:
-        show_lead_status(fdata)
-    with tabs[2]:
-        show_calls(fdata)
+    tabs = st.tabs(["🎯 Executive Summary", "📈 Lead Status", "📞 AI Call Activity"])
+    with tabs[0]: show_executive_summary(fdata)
+    with tabs[1]: show_lead_status(fdata)
+    with tabs[2]: show_calls(fdata)
