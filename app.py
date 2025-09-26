@@ -498,32 +498,74 @@ def show_executive_summary(d):
 # -----------------------------------------------------------------------------
 # Lead Status page
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Lead Status page (robust to schema differences)
+# -----------------------------------------------------------------------------
 def show_lead_status(d):
-    leads=d.get("leads"); statuses=d.get("lead_statuses")
-    if leads is None or len(leads)==0 or "LeadStatusId" not in leads.columns:
-        st.info("No lead status data in the selected range."); return
-    lbl_map={}
-    if statuses is not None and "leadstatusid" in statuses.columns:
-        name_col = "statusname_e" if "statusname_e" in statuses.columns else None
-        for _,r in statuses.iterrows():
-            lbl_map[int(r["leadstatusid"])]= str(r[name_col]) if name_col else f"Status {int(r['leadstatusid'])}"
-    counts = leads["LeadStatusId"].value_counts().reset_index()
-    counts.columns=["LeadStatusId","count"]
+    statuses = d.get("lead_statuses")
+    leads = d.get("leads")
+
+    # Nothing to do if base frames are missing
+    if leads is None or len(leads) == 0 or statuses is None or len(statuses) == 0:
+        st.info("No lead status data in the selected range.")
+        return
+
+    # Helper: pick the first existing column name from a candidate list (case-insensitive)
+    def pick_col(df, candidates):
+        m = {c.lower(): c for c in df.columns}
+        for c in candidates:
+            if c.lower() in m:
+                return m[c.lower()]
+        return None
+
+    s = statuses.copy()
+
+    # Resolve ID and Name columns across common variants
+    id_col = pick_col(s, ["leadstatusid", "lead_status_id", "statusid", "status_id"])
+    name_col = pick_col(s, ["statusname_e", "statusname", "status_name_e", "status_name", "name"])
+
+    if id_col is None or name_col is None:
+        st.warning(f"Lead status columns not found (have: {list(s.columns)})")
+        return
+
+    # Build label map safely
+    lbl_map = dict(zip(s[id_col].astype(int), s[name_col].astype(str)))
+
+    # Compute counts by status
+    if "LeadStatusId" not in leads.columns:
+        st.info("LeadStatusId column not present on leads after normalization.")
+        return
+
+    counts = leads["LeadStatusId"].value_counts(dropna=False).reset_index()
+    counts.columns = ["LeadStatusId", "count"]
     counts["label"] = counts["LeadStatusId"].map(lbl_map).fillna(counts["LeadStatusId"].astype(str))
-    c1,c2 = st.columns([2,1])
+
+    # Pie + metrics
+    c1, c2 = st.columns([2, 1])
     with c1:
-        fig = px.pie(counts, names="label", values="count", hole=0.35, color_discrete_sequence=px.colors.sequential.Viridis)
+        fig = px.pie(
+            counts, names="label", values="count", hole=0.35,
+            color_discrete_sequence=px.colors.sequential.Viridis
+        )
         fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white")
         st.plotly_chart(fig, use_container_width=True)
+
     with c2:
-        st.metric("Total Leads", format_number(len(leads)))
-        won_id = None
-        if statuses is not None and "statusname_e" in statuses.columns:
-            m = statuses.loc[statuses["statusname_e"].str.lower()=="won"]
-            if not m.empty: won_id = int(m.iloc[0]["leadstatusid"])
-        won = int((leads["LeadStatusId"]==won_id).sum()) if won_id is not None else 0
-        disc_ids = statuses.loc[statuses["statusname_e"].str.contains("discussion", case=False, na=False), "leadstatusid"].tolist() if statuses is not None else []
-        in_discuss = int(leads["LeadStatusId"].isin(disc_ids).sum()) if len(disc_ids) else 0
+        st.metric("Total Leads", f"{len(leads):,}")
+
+        # Optional rollups using detected columns (guarded)
+        # Won
+        won_ids = s.loc[s[name_col].str.lower().eq("won"), id_col].astype(int).tolist()
+        won = int(leads["LeadStatusId"].isin(won_ids).sum()) if won_ids else 0
+
+        # In discussion (any status whose name contains 'discussion')
+        discuss_mask = s[name_col].str.contains("discussion", case=False, na=False)
+        discuss_ids = s.loc[discuss_mask, id_col].astype(int).tolist()
+        in_discuss = int(leads["LeadStatusId"].isin(discuss_ids).sum()) if discuss_ids else 0
+
+        st.metric("Won", f"{won:,}")
+        st.metric("In Discussion", f"{in_discuss:,}")
+
 
 # -----------------------------------------------------------------------------
 # Calls page (basic)
