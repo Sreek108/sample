@@ -1,21 +1,85 @@
-# Python
+# -----------------------------
+# Python / build artifacts
+# -----------------------------
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
+*.so
 *.egg-info/
-.env
-.venv
-venv/
-.env.*
-*.log
+*.egg
+build/
+dist/
+pip-wheel-metadata/
+*.manifest
+*.spec
 
+# Byte-compiled and backup files
+*~
+*.bak
+*.tmp
+*.swp
+*.swo
+
+# -----------------------------
+# Environments
+# -----------------------------
+.env
+.env.*
+.venv/
+venv/
+ENV/
+env/
+
+# -----------------------------
+# Logs / test caches / coverage
+# -----------------------------
+*.log
+logs/
+pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# -----------------------------
 # Streamlit
+# Keep config, ignore secrets and local credentials
+# -----------------------------
 .streamlit/secrets.toml
 .streamlit/credentials.toml
+# Optional: uncomment to ignore any local state/cache folders if created
+# .streamlit/cache/
+# .streamlit/state/
 
-# OS
+# -----------------------------
+# IDE / Editor
+# -----------------------------
+.vscode/
+.idea/
+*.code-workspace
+
+# -----------------------------
+# OS-specific
+# -----------------------------
 .DS_Store
 Thumbs.db
 
-# Data
-data/*.xlsx
-data/*.parquet
+# -----------------------------
+# Data (keep repo clean; allow placeholders)
+# Remove lines below if you intentionally track sample data
+# -----------------------------
+data/**/*.csv
+data/**/*.tsv
+data/**/*.xlsx
+data/**/*.parquet
+data/**/*.json
+data/**/*.sqlite
+# Keep placeholders or docs in data/
+!data/.gitkeep
+!data/README.md
+
+# -----------------------------
+# Notebooks (optional)
+# Track notebooks by default; ignore checkpoints
+# -----------------------------
+.ipynb_checkpoints/
