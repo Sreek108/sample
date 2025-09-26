@@ -43,13 +43,13 @@ htmlcov/
 
 # -----------------------------
 # Streamlit
-# Keep config, ignore secrets and local credentials
+# (Keep config, ignore secrets/credentials)
 # -----------------------------
 .streamlit/secrets.toml
 .streamlit/credentials.toml
-# Optional: uncomment to ignore any local state/cache folders if created
-# .streamlit/cache/
-# .streamlit/state/
+# Optional local runtime state/cache (safe to ignore)
+.streamlit/cache/
+.streamlit/state/
 
 # -----------------------------
 # IDE / Editor
@@ -65,8 +65,7 @@ htmlcov/
 Thumbs.db
 
 # -----------------------------
-# Data (keep repo clean; allow placeholders)
-# Remove lines below if you intentionally track sample data
+# Data (ignore local data; keep placeholders)
 # -----------------------------
 data/**/*.csv
 data/**/*.tsv
@@ -74,12 +73,11 @@ data/**/*.xlsx
 data/**/*.parquet
 data/**/*.json
 data/**/*.sqlite
-# Keep placeholders or docs in data/
+# Keep placeholder/docs so folder exists in repo
 !data/.gitkeep
 !data/README.md
 
 # -----------------------------
 # Notebooks (optional)
-# Track notebooks by default; ignore checkpoints
 # -----------------------------
 .ipynb_checkpoints/
