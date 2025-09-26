@@ -1,4 +1,4 @@
-# app.py — DAR Global CEO Dashboard (SQL Server backend)
+# app.py — DAR Global CEO Dashboard (SQL Server backend, robust fetch + table mapping)
 
 import streamlit as st
 import plotly.express as px
@@ -55,132 +55,150 @@ div[data-testid="metric-container"] {{
 # Helpers
 # -----------------------------------------------------------------------------
 def format_currency(v):
-    if pd.isna(v):
-        return "$0"
+    if pd.isna(v): return "$0"
     return f"${v/1e9:.1f}B" if v>=1e9 else (f"${v/1e6:.1f}M" if v>=1e6 else f"${v:,.0f}")
 
 def format_number(v):
-    if pd.isna(v):
-        return "0"
+    if pd.isna(v): return "0"
     return f"{v/1e6:.1f}M" if v>=1e6 else (f"{v/1e3:.1f}K" if v>=1e3 else f"{v:,.0f}")
 
 # -----------------------------------------------------------------------------
-# Database loader (replaces CSV loader)
+# Database loader (robust; table names from Secrets; error surfacing)
 # -----------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def load_data(_unused: str = "data"):
     """
-    Load all required tables from SQL Server using Streamlit's st.connection.
-    Connection details come from .streamlit/secrets.toml under [connections.sql].
+    Load required tables using Streamlit's st.connection and names provided via
+    [connections.sql.tables] in Secrets, falling back to dbo defaults if not set.
     """
-    conn = st.connection("sql")  # Uses Streamlit SQLConnection with secrets
+    # Create the SQL connection
+    conn = st.connection("sql")  # reads .streamlit/secrets.toml [web:9][file:192]
+
+    # Helper to get fully-qualified table from Secrets
+    tbl_cfg = st.secrets.get("connections", {}).get("sql", {}).get("tables", {})  # optional mapping [web:3][file:192]
+    def get_tbl(key, default):
+        return tbl_cfg.get(key, default)
+
+    # Fetch that surfaces any SQL error in the UI
+    def fetch(table_fqn, label=None, limit=None):
+        label = label or table_fqn
+        top = f"TOP {int(limit)} " if limit else ""
+        try:
+            return conn.query(f"SELECT {top}* FROM {table_fqn}", ttl=600)  # SQLConnection/query [web:9]
+        except Exception as e:
+            st.error(f"Query failed for {label}: {e}")
+            return None
+
+    # Optional: show which server/db we reached
+    try:
+        info = conn.query("SELECT @@SERVERNAME AS server, DB_NAME() AS db", ttl=60)
+        st.caption(f"Connected to {info.iloc[0]['server']} / {info.iloc[0]['db']}")  # confirms DB context [web:9]
+    except Exception as e:
+        st.error(f"Connectivity check failed: {e}")
+        return {}
 
     ds = {}
-    def fetch(table):
-        try:
-            return conn.query(f"SELECT * FROM dbo.{table}", ttl=600)
-        except Exception:
-            return None
 
-    # Base tables
-    ds["leads"]        = fetch("Lead")
-    ds["agents"]       = fetch("Agents")
-    ds["calls"]        = fetch("LeadCallRecord")
-    ds["schedules"]    = fetch("LeadSchedule")
-    ds["transactions"] = fetch("LeadTransaction")
+    # Base tables (use Secrets override if provided)
+    ds["leads"]        = fetch(get_tbl("leads",        "dbo.Lead"),            "leads")
+    ds["agents"]       = fetch(get_tbl("agents",       "dbo.Agents"),          "agents")
+    ds["calls"]        = fetch(get_tbl("calls",        "dbo.LeadCallRecord"),  "calls")
+    ds["schedules"]    = fetch(get_tbl("schedules",    "dbo.LeadSchedule"),    "schedules")
+    ds["transactions"] = fetch(get_tbl("transactions", "dbo.LeadTransaction"), "transactions")
 
     # Lookups
-    ds["countries"]    = fetch("Country")
-    ds["lead_stages"]  = fetch("LeadStage")
-    ds["lead_statuses"]= fetch("LeadStatus")
-    ds["lead_sources"] = fetch("LeadSource")
-    ds["lead_scoring"] = fetch("LeadScoring")
-    ds["call_statuses"]= fetch("CallStatus")
-    ds["sentiments"]   = fetch("CallSentiment")
-    ds["task_types"]   = fetch("TaskType")
-    ds["task_statuses"]= fetch("TaskStatus")
-    ds["city_region"]  = fetch("CityRegion")
-    ds["timezone_info"]= fetch("TimezoneInfo")
-    ds["priority"]     = fetch("Priority")
-    ds["meeting_status"]=fetch("MeetingStatus")
-    ds["agent_meeting_assignment"] = fetch("AgentMeetingAssignment")
+    ds["countries"]    = fetch(get_tbl("countries",    "dbo.Country"))
+    ds["lead_stages"]  = fetch(get_tbl("lead_stages",  "dbo.LeadStage"))
+    ds["lead_statuses"]= fetch(get_tbl("lead_statuses","dbo.LeadStatus"))
+    ds["lead_sources"] = fetch(get_tbl("lead_sources", "dbo.LeadSource"))
+    ds["lead_scoring"] = fetch(get_tbl("lead_scoring", "dbo.LeadScoring"))
+    ds["call_statuses"]= fetch(get_tbl("call_statuses","dbo.CallStatus"))
+    ds["sentiments"]   = fetch(get_tbl("sentiments",   "dbo.CallSentiment"))
+    ds["task_types"]   = fetch(get_tbl("task_types",   "dbo.TaskType"))
+    ds["task_statuses"]= fetch(get_tbl("task_statuses","dbo.TaskStatus"))
+    ds["city_region"]  = fetch(get_tbl("city_region",  "dbo.CityRegion"))
+    ds["timezone_info"]= fetch(get_tbl("timezone_info","dbo.TimezoneInfo"))
+    ds["priority"]     = fetch(get_tbl("priority",     "dbo.Priority"))
+    ds["meeting_status"]=fetch(get_tbl("meeting_status","dbo.MeetingStatus"))
+    ds["agent_meeting_assignment"] = fetch(get_tbl("agent_meeting_assignment","dbo.AgentMeetingAssignment"))
 
-    # ---- Normalize columns / types to match original app expectations ----
+    # ---------- Normalization helpers ----------
     def norm(df):
-        if df is None:
-            return None
+        if df is None: return None
         out = df.copy()
-        out.columns = out.columns.str.strip().str.replace(r"[^\w]+","_",regex=True).str.lower()
+        out.columns = (
+            out.columns
+            .str.strip()
+            .str.replace(r"[^\w]+","_", regex=True)
+            .str.replace("__+","_", regex=True)
+        )
         return out
 
-    def rename(df, mapping):
-        if df is None:
-            return None
-        return df.rename(columns={c: mapping[c] for c in mapping if c in df.columns})
+    def coerce_dt(series):
+        return pd.to_datetime(series, errors="coerce")  # robust parsing for filters/grouping [web:169]
 
-    # Leads
+    # ---------- Leads: ensure CreatedOn exists ----------
     if ds["leads"] is not None:
         df = norm(ds["leads"])
-        df = rename(df,{
-            "leadid":"LeadId","lead_id":"LeadId","leadcode":"LeadCode",
-            "leadstageid":"LeadStageId","leadstatusid":"LeadStatusId","leadscoringid":"LeadScoringId",
-            "assignedagentid":"AssignedAgentId","createdon":"CreatedOn","isactive":"IsActive",
-            "countryid":"CountryId","cityregionid":"CityRegionId",
-            "estimatedbudget":"EstimatedBudget","budget":"EstimatedBudget"
-        })
-        for col, default in [("EstimatedBudget",0.0),("LeadStageId",pd.NA),("LeadStatusId",pd.NA),
-                             ("AssignedAgentId",pd.NA),("CreatedOn",pd.NaT),("IsActive",1)]:
-            if col not in df.columns:
-                df[col]=default
-        df["CreatedOn"]=pd.to_datetime(df["CreatedOn"], errors="coerce")
-        df["EstimatedBudget"]=pd.to_numeric(df["EstimatedBudget"], errors="coerce").fillna(0.0)
-        ds["leads"]=df
+        # If the real column is different, map it to CreatedOn
+        for c in ["CreatedOn","CreatedDate","CreateDate","CreatedAt","created_on","createddate","created"]:
+            if c in df.columns:
+                if c != "CreatedOn": df["CreatedOn"] = df[c]
+                break
+        for need, default in [
+            ("LeadStageId", pd.NA), ("LeadStatusId", pd.NA), ("AssignedAgentId", pd.NA),
+            ("EstimatedBudget", 0.0), ("IsActive", 1)
+        ]:
+            if need not in df.columns: df[need] = default
+        if "EstimatedBudget" in df.columns:
+            df["EstimatedBudget"] = pd.to_numeric(df["EstimatedBudget"], errors="coerce").fillna(0.0)
+        if "CreatedOn" in df.columns:
+            df["CreatedOn"] = coerce_dt(df["CreatedOn"])
+        ds["leads"] = df
 
-    # Agents
-    if ds["agents"] is not None:
-        df=norm(ds["agents"])
-        df=rename(df,{"agentid":"AgentId","firstname":"FirstName","first_name":"FirstName",
-                      "lastname":"LastName","last_name":"LastName","isactive":"IsActive"})
-        for c, d in [("FirstName",""),("LastName",""),("Role",""),("IsActive",1)]:
-            if c not in df.columns:
-                df[c]=d
-        ds["agents"]=df
-
-    # Calls
+    # ---------- Calls: ensure CallDateTime exists ----------
     if ds["calls"] is not None:
-        df=norm(ds["calls"])
-        df=rename(df,{"leadcallid":"LeadCallId","lead_id":"LeadId","leadid":"LeadId",
-                      "callstatusid":"CallStatusId","calldatetime":"CallDateTime","call_datetime":"CallDateTime",
-                      "durationseconds":"DurationSeconds","sentimentid":"SentimentId",
-                      "assignedagentid":"AssignedAgentId","calldirection":"CallDirection","direction":"CallDirection"})
+        df = norm(ds["calls"])
+        for c in ["CallDateTime","CallDatetime","CallTime","CallDate","created_at","createdon"]:
+            if c in df.columns:
+                if c != "CallDateTime": df["CallDateTime"] = df[c]
+                break
         if "CallDateTime" in df.columns:
-            df["CallDateTime"]=pd.to_datetime(df["CallDateTime"], errors="coerce")
-        ds["calls"]=df
+            df["CallDateTime"] = coerce_dt(df["CallDateTime"])
+        ds["calls"] = df
 
-    # Schedules
+    # ---------- Schedules: ensure ScheduledDate exists ----------
     if ds["schedules"] is not None:
-        df=norm(ds["schedules"])
-        df=rename(df,{"scheduleid":"ScheduleId","leadid":"LeadId","tasktypeid":"TaskTypeId","scheduleddate":"ScheduledDate",
-                      "taskstatusid":"TaskStatusId","assignedagentid":"AssignedAgentId","completeddate":"CompletedDate","isfollowup":"IsFollowUp"})
+        df = norm(ds["schedules"])
+        for c in ["ScheduledDate","ScheduleDate","StartDate","StartDateTime","DueDate"]:
+            if c in df.columns:
+                if c != "ScheduledDate": df["ScheduledDate"] = df[c]
+                break
         if "ScheduledDate" in df.columns:
-            df["ScheduledDate"]=pd.to_datetime(df["ScheduledDate"], errors="coerce")
+            df["ScheduledDate"] = coerce_dt(df["ScheduledDate"])
         if "CompletedDate" in df.columns:
-            df["CompletedDate"]=pd.to_datetime(df["CompletedDate"], errors="coerce")
-        ds["schedules"]=df
+            df["CompletedDate"] = coerce_dt(df["CompletedDate"])
+        ds["schedules"] = df
 
-    # Transactions
+    # ---------- Transactions: ensure TransactionDate exists ----------
     if ds["transactions"] is not None:
-        df=norm(ds["transactions"])
-        df=rename(df,{"transactionid":"TransactionId","leadid":"LeadId","tasktypeid":"TaskTypeId","transactiondate":"TransactionDate"})
+        df = norm(ds["transactions"])
+        for c in ["TransactionDate","TxnDate","CreatedOn","CreatedDate","Date"]:
+            if c in df.columns:
+                if c != "TransactionDate": df["TransactionDate"] = df[c]
+                break
         if "TransactionDate" in df.columns:
-            df["TransactionDate"]=pd.to_datetime(df["TransactionDate"], errors="coerce")
-        ds["transactions"]=df
+            df["TransactionDate"] = coerce_dt(df["TransactionDate"])
+        ds["transactions"] = df
 
-    # Lookups
-    for lk in ["countries","lead_stages","lead_statuses","lead_sources","lead_scoring","call_statuses","sentiments",
-               "task_types","task_statuses","city_region","timezone_info","priority","meeting_status","agent_meeting_assignment"]:
+    # ---------- Normalize lookups ----------
+    for lk in [
+        "countries","lead_stages","lead_statuses","lead_sources","lead_scoring",
+        "call_statuses","sentiments","task_types","task_statuses","city_region",
+        "timezone_info","priority","meeting_status","agent_meeting_assignment"
+    ]:
         if ds.get(lk) is not None:
-            ds[lk]=norm(ds[lk])
+            ds[lk] = norm(ds[lk])
 
     return ds
 
@@ -202,9 +220,9 @@ with st.sidebar:
     st.markdown("## Filters")
     grain = st.radio("Time grain", ["Week","Month","Year"], index=1, horizontal=True)
 
-data = load_data("data")  # param kept for signature compatibility
+data = load_data("data")  # signature preserved for cache key [web:9]
 
-# Optional debug to verify ranges; collapse by default
+# Debug expander: counts and date ranges (helps verify table names + data span)
 with st.expander("Debug: row counts and ranges", expanded=False):
     def mm(s):
         s = pd.to_datetime(s, errors="coerce")
