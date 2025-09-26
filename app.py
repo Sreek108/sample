@@ -18,7 +18,12 @@ except Exception:
 # -----------------------------------------------------------------------------
 # Page config and theme
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="DAR Global - Executive Dashboard", page_icon="🏗️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="DAR Global - Executive Dashboard",
+    page_icon="🏗️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 EXEC_PRIMARY="#DAA520"; EXEC_BLUE="#1E90FF"; EXEC_GREEN="#32CD32"; EXEC_DANGER="#DC143C"; EXEC_BG="#1a1a1a"; EXEC_SURFACE="#2d2d2d"
 
@@ -50,11 +55,13 @@ div[data-testid="metric-container"] {{
 # Helpers
 # -----------------------------------------------------------------------------
 def format_currency(v):
-    if pd.isna(v): return "$0"
+    if pd.isna(v):
+        return "$0"
     return f"${v/1e9:.1f}B" if v>=1e9 else (f"${v/1e6:.1f}M" if v>=1e6 else f"${v:,.0f}")
 
 def format_number(v):
-    if pd.isna(v): return "0"
+    if pd.isna(v):
+        return "0"
     return f"{v/1e6:.1f}M" if v>=1e6 else (f"{v/1e3:.1f}K" if v>=1e3 else f"{v:,.0f}")
 
 # -----------------------------------------------------------------------------
@@ -100,13 +107,15 @@ def load_data(_unused: str = "data"):
 
     # ---- Normalize columns / types to match original app expectations ----
     def norm(df):
-        if df is None: return None
+        if df is None:
+            return None
         out = df.copy()
         out.columns = out.columns.str.strip().str.replace(r"[^\w]+","_",regex=True).str.lower()
         return out
 
     def rename(df, mapping):
-        if df is None: return None
+        if df is None:
+            return None
         return df.rename(columns={c: mapping[c] for c in mapping if c in df.columns})
 
     # Leads
@@ -121,7 +130,8 @@ def load_data(_unused: str = "data"):
         })
         for col, default in [("EstimatedBudget",0.0),("LeadStageId",pd.NA),("LeadStatusId",pd.NA),
                              ("AssignedAgentId",pd.NA),("CreatedOn",pd.NaT),("IsActive",1)]:
-            if col not in df.columns: df[col]=default
+            if col not in df.columns:
+                df[col]=default
         df["CreatedOn"]=pd.to_datetime(df["CreatedOn"], errors="coerce")
         df["EstimatedBudget"]=pd.to_numeric(df["EstimatedBudget"], errors="coerce").fillna(0.0)
         ds["leads"]=df
@@ -129,9 +139,11 @@ def load_data(_unused: str = "data"):
     # Agents
     if ds["agents"] is not None:
         df=norm(ds["agents"])
-        df=rename(df,{"agentid":"AgentId","firstname":"FirstName","first_name":"FirstName","lastname":"LastName","last_name":"LastName","isactive":"IsActive"})
+        df=rename(df,{"agentid":"AgentId","firstname":"FirstName","first_name":"FirstName",
+                      "lastname":"LastName","last_name":"LastName","isactive":"IsActive"})
         for c, d in [("FirstName",""),("LastName",""),("Role",""),("IsActive",1)]:
-            if c not in df.columns: df[c]=d
+            if c not in df.columns:
+                df[c]=d
         ds["agents"]=df
 
     # Calls
@@ -141,7 +153,8 @@ def load_data(_unused: str = "data"):
                       "callstatusid":"CallStatusId","calldatetime":"CallDateTime","call_datetime":"CallDateTime",
                       "durationseconds":"DurationSeconds","sentimentid":"SentimentId",
                       "assignedagentid":"AssignedAgentId","calldirection":"CallDirection","direction":"CallDirection"})
-        if "CallDateTime" in df.columns: df["CallDateTime"]=pd.to_datetime(df["CallDateTime"], errors="coerce")
+        if "CallDateTime" in df.columns:
+            df["CallDateTime"]=pd.to_datetime(df["CallDateTime"], errors="coerce")
         ds["calls"]=df
 
     # Schedules
@@ -149,21 +162,25 @@ def load_data(_unused: str = "data"):
         df=norm(ds["schedules"])
         df=rename(df,{"scheduleid":"ScheduleId","leadid":"LeadId","tasktypeid":"TaskTypeId","scheduleddate":"ScheduledDate",
                       "taskstatusid":"TaskStatusId","assignedagentid":"AssignedAgentId","completeddate":"CompletedDate","isfollowup":"IsFollowUp"})
-        if "ScheduledDate" in df.columns: df["ScheduledDate"]=pd.to_datetime(df["ScheduledDate"], errors="coerce")
-        if "CompletedDate" in df.columns: df["CompletedDate"]=pd.to_datetime(df["CompletedDate"], errors="coerce")
+        if "ScheduledDate" in df.columns:
+            df["ScheduledDate"]=pd.to_datetime(df["ScheduledDate"], errors="coerce")
+        if "CompletedDate" in df.columns:
+            df["CompletedDate"]=pd.to_datetime(df["CompletedDate"], errors="coerce")
         ds["schedules"]=df
 
     # Transactions
     if ds["transactions"] is not None:
         df=norm(ds["transactions"])
         df=rename(df,{"transactionid":"TransactionId","leadid":"LeadId","tasktypeid":"TaskTypeId","transactiondate":"TransactionDate"})
-        if "TransactionDate" in df.columns: df["TransactionDate"]=pd.to_datetime(df["TransactionDate"], errors="coerce")
+        if "TransactionDate" in df.columns:
+            df["TransactionDate"]=pd.to_datetime(df["TransactionDate"], errors="coerce")
         ds["transactions"]=df
 
     # Lookups
     for lk in ["countries","lead_stages","lead_statuses","lead_sources","lead_scoring","call_statuses","sentiments",
                "task_types","task_statuses","city_region","timezone_info","priority","meeting_status","agent_meeting_assignment"]:
-        if ds.get(lk) is not None: ds[lk]=norm(ds[lk])
+        if ds.get(lk) is not None:
+            ds[lk]=norm(ds[lk])
 
     return ds
 
@@ -187,12 +204,28 @@ with st.sidebar:
 
 data = load_data("data")  # param kept for signature compatibility
 
+# Optional debug to verify ranges; collapse by default
+with st.expander("Debug: row counts and ranges", expanded=False):
+    def mm(s):
+        s = pd.to_datetime(s, errors="coerce")
+        return f"{s.min()} → {s.max()}"
+    st.write({k: (0 if (v is None) else len(v)) for k,v in data.items()})
+    if data.get("leads") is not None and "CreatedOn" in data["leads"].columns:
+        st.write("Leads CreatedOn:", mm(data["leads"]["CreatedOn"]))
+    if data.get("calls") is not None and "CallDateTime" in data["calls"].columns:
+        st.write("Calls CallDateTime:", mm(data["calls"]["CallDateTime"]))
+    if data.get("schedules") is not None and "ScheduledDate" in data["schedules"].columns:
+        st.write("Schedules ScheduledDate:", mm(data["schedules"]["ScheduledDate"]))
+
 def filter_by_date(datasets, grain_sel: str):
     out = dict(datasets)
     cands=[]
-    if out.get("leads") is not None and "CreatedOn" in out["leads"].columns: cands.append(pd.to_datetime(out["leads"]["CreatedOn"], errors="coerce"))
-    if out.get("calls") is not None and "CallDateTime" in out["calls"].columns: cands.append(pd.to_datetime(out["calls"]["CallDateTime"], errors="coerce"))
-    if out.get("schedules") is not None and "ScheduledDate" in out["schedules"].columns: cands.append(pd.to_datetime(out["schedules"]["ScheduledDate"], errors="coerce"))
+    if out.get("leads") is not None and "CreatedOn" in out["leads"].columns:
+        cands.append(pd.to_datetime(out["leads"]["CreatedOn"], errors="coerce"))
+    if out.get("calls") is not None and "CallDateTime" in out["calls"].columns:
+        cands.append(pd.to_datetime(out["calls"]["CallDateTime"], errors="coerce"))
+    if out.get("schedules") is not None and "ScheduledDate" in out["schedules"].columns:
+        cands.append(pd.to_datetime(out["schedules"]["ScheduledDate"], errors="coerce"))
 
     if cands:
         gmin=min([c.min() for c in cands if c is not None]).date()
@@ -203,18 +236,26 @@ def filter_by_date(datasets, grain_sel: str):
     with st.sidebar:
         preset = st.select_slider("Quick range", ["Last 7 days","Last 30 days","Last 90 days","MTD","YTD","Custom"], value="Last 30 days")
         today=date.today()
-        if preset=="Last 7 days": default_start, default_end = max(gmin, today-timedelta(days=6)), today
-        elif preset=="Last 30 days": default_start, default_end = max(gmin, today-timedelta(days=29)), today
-        elif preset=="Last 90 days": default_start, default_end = max(gmin, today-timedelta(days=89)), today
-        elif preset=="MTD": default_start, default_end = max(gmin, today.replace(day=1)), today
-        elif preset=="YTD": default_start, default_end = max(gmin, date(today.year,1,1)), today
-        else: default_start, default_end = gmin, gmax
+        if preset=="Last 7 days":
+            default_start, default_end = max(gmin, today-timedelta(days=6)), today
+        elif preset=="Last 30 days":
+            default_start, default_end = max(gmin, today-timedelta(days=29)), today
+        elif preset=="Last 90 days":
+            default_start, default_end = max(gmin, today-timedelta(days=89)), today
+        elif preset=="MTD":
+            default_start, default_end = max(gmin, today.replace(day=1)), today
+        elif preset=="YTD":
+            default_start, default_end = max(gmin, date(today.year,1,1)), today
+        else:
+            default_start, default_end = gmin, gmax
         step = timedelta(days=1 if grain_sel in ["Week","Month"] else 7)
         date_start, date_end = st.slider("Date range", min_value=gmin, max_value=gmax, value=(default_start, default_end), step=step)
 
     def add_period(dt):
-        if grain_sel=="Week": return dt.dt.to_period("W").apply(lambda p: p.start_time.date())
-        if grain_sel=="Month": return dt.dt.to_period("M").apply(lambda p: p.start_time.date())
+        if grain_sel=="Week":
+            return dt.dt.to_period("W").apply(lambda p: p.start_time.date())
+        if grain_sel=="Month":
+            return dt.dt.to_period("M").apply(lambda p: p.start_time.date())
         return dt.dt.to_period("Y").apply(lambda p: p.start_time.date())
 
     # Leads
@@ -262,7 +303,11 @@ fdata = filter_by_date(data, grain)
 # -----------------------------------------------------------------------------
 # Navigation
 # -----------------------------------------------------------------------------
-NAV = [("Executive","speedometer2","🎯 Executive Summary"),("Lead Status","people","📈 Lead Status"),("AI Calls","telephone","📞 AI Call Activity")]
+NAV = [
+    ("Executive","speedometer2","🎯 Executive Summary"),
+    ("Lead Status","people","📈 Lead Status"),
+    ("AI Calls","telephone","📞 AI Call Activity")
+]
 if HAS_OPTION_MENU:
     selected = option_menu(None, [n[0] for n in NAV], icons=[n[1] for n in NAV], orientation="horizontal", default_index=0,
                            styles={"container":{"padding":"0!important","background-color":"#0f1116"},
@@ -274,7 +319,7 @@ else:
     selected=None
 
 # -----------------------------------------------------------------------------
-# Executive Summary (Performance KPIs only; executive cards removed)
+# Executive Summary (Performance KPIs only)
 # -----------------------------------------------------------------------------
 def show_executive_summary(d):
     leads=d.get("leads"); agents=d.get("agents"); calls=d.get("calls")
@@ -291,7 +336,6 @@ def show_executive_summary(d):
         if not match.empty and "leadstatusid" in match.columns:
             won_status_id = int(match.iloc[0]["leadstatusid"])
 
-    # ---------------- Performance KPIs section (Week/Month/Year) ----------------
     st.subheader("Performance KPIs")
     today = pd.Timestamp.today().normalize()
     week_start = today - pd.Timedelta(days=today.weekday())  # Monday
@@ -310,7 +354,7 @@ def show_executive_summary(d):
             (pd.to_datetime(leads["CreatedOn"], errors="coerce") <= pd.Timestamp(end))
         ] if "CreatedOn" in leads.columns else pd.DataFrame()
 
-        # Meetings Scheduled in period (prefer LeadSchedule, fallback AMA)
+        # Meetings scheduled (prefer LeadSchedule, fallback AMA)
         meetings_cnt = 0
         if schedules is not None and "ScheduledDate" in schedules.columns:
             s = schedules.copy()
@@ -360,7 +404,9 @@ def show_executive_summary(d):
 
     def _index(df):
         df=df.copy()
-        if df.empty: df["idx"]=[]; return df
+        if df.empty:
+            df["idx"]=[]
+            return df
         base = df["value"].iloc[0] if df["value"].iloc[0]!=0 else 1.0
         df["idx"]=(df["value"]/base)*100.0
         return df
@@ -389,7 +435,9 @@ def show_executive_summary(d):
         return _apply_axes(fig, df["idx"], title)
 
     def tile_bullet(df,title,bar_color):
-        if df.empty: fig=go.Figure(); return _apply_axes(fig, [0,1], title)
+        if df.empty:
+            fig=go.Figure()
+            return _apply_axes(fig, [0,1], title)
         cur=float(df["idx"].iloc[-1])
         fig=go.Figure(go.Indicator(mode="number+gauge+delta", value=cur, number={'valueformat':".0f"}, delta={'reference':100},
                                    gauge={'shape':"bullet",'axis':{'range':[80,120]},
@@ -424,7 +472,7 @@ def show_executive_summary(d):
     statuses   = d.get("lead_statuses")
     meetings   = d.get("agent_meeting_assignment")
 
-    def have(df, cols): 
+    def have(df, cols):
         return (df is not None) and set(cols).issubset(df.columns)
 
     def status_ids_by_name(names):
@@ -603,10 +651,16 @@ def show_calls(d):
 # Router
 # -----------------------------------------------------------------------------
 if HAS_OPTION_MENU:
-    if selected=="Executive": show_executive_summary(fdata)
-    elif selected=="Lead Status": show_lead_status(fdata)
-    elif selected=="AI Calls": show_calls(fdata)
+    if selected=="Executive":
+        show_executive_summary(fdata)
+    elif selected=="Lead Status":
+        show_lead_status(fdata)
+    elif selected=="AI Calls":
+        show_calls(fdata)
 else:
-    with tabs[0]: show_executive_summary(fdata)
-    with tabs[1]: show_lead_status(fdata)
-    with tabs[2]: show_calls(fdata)
+    with tabs[0]:
+        show_executive_summary(fdata)
+    with tabs[1]:
+        show_lead_status(fdata)
+    with tabs[2]:
+        show_calls(fdata)
