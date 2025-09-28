@@ -1,4 +1,4 @@
-# app.py — DAR Global CEO Dashboard (SQL Server via st.connection + robust debug)
+# app.py — DAR Global CEO Dashboard (SQL Server via st.connection)
 
 import streamlit as st
 import plotly.express as px
@@ -46,7 +46,7 @@ div[data-testid="metric-container"] {{
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# Secrets / driver visibility (to diagnose TLS/URL issues quickly)
+# Secrets / driver visibility (diagnostics; optional to remove for prod)
 # -----------------------------------------------------------------------------
 with st.expander("Debug: connection config and drivers", expanded=False):
     cfg = st.secrets.get("connections", {}).get("sql", {})
@@ -77,12 +77,8 @@ def format_number(v):
 # -----------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def load_data(_unused: str = "data"):
-    # Build Streamlit SQL connection — it will use connections.sql.url if present
-    # which is the recommended way to pass ODBC attributes like Encrypt/TrustServerCertificate.  # [docs]
     from streamlit.connections import SQLConnection
     conn = st.connection("sql", type=SQLConnection)
-
-    # Quick connectivity check (shows server and db or surfaces TLS error)
     try:
         info = conn.query("SELECT @@SERVERNAME AS server, DB_NAME() AS db", ttl=60)
         st.caption(f"Connected to {info.iloc[0]['server']} / {info.iloc[0]['db']}")
@@ -90,10 +86,8 @@ def load_data(_unused: str = "data"):
         st.error(f"Connectivity check failed: {e}")
         return {}
 
-    # Table name overrides (optional) from Secrets
     tbl_cfg = st.secrets.get("connections", {}).get("sql", {}).get("tables", {})
-    def T(key, default):
-        return tbl_cfg.get(key, default)
+    def T(key, default): return tbl_cfg.get(key, default)
 
     def fetch(table_fqn, label=None, limit=None):
         label = label or table_fqn
@@ -122,7 +116,6 @@ def load_data(_unused: str = "data"):
     ]:
         ds[k] = fetch(T(k, default), k)
 
-    # Normalize and map date columns for filters
     def norm(df):
         if df is None: return None
         out = df.copy()
@@ -159,10 +152,8 @@ def load_data(_unused: str = "data"):
             if c in df.columns:
                 if c != "ScheduledDate": df["ScheduledDate"] = df[c]
                 break
-        if "ScheduledDate" in df.columns:
-            df["ScheduledDate"] = coerce_dt(df["ScheduledDate"])
-        if "CompletedDate" in df.columns:
-            df["CompletedDate"] = coerce_dt(df["CompletedDate"])
+        if "ScheduledDate" in df.columns: df["ScheduledDate"] = coerce_dt(df["ScheduledDate"])
+        if "CompletedDate" in df.columns: df["CompletedDate"] = coerce_dt(df["CompletedDate"])
         ds["schedules"] = df
 
     if ds["transactions"] is not None:
@@ -171,8 +162,7 @@ def load_data(_unused: str = "data"):
             if c in df.columns:
                 if c != "TransactionDate": df["TransactionDate"] = df[c]
                 break
-        if "TransactionDate" in df.columns:
-            df["TransactionDate"] = coerce_dt(df["TransactionDate"])
+        if "TransactionDate" in df.columns: df["TransactionDate"] = coerce_dt(df["TransactionDate"])
         ds["transactions"] = df
 
     for lk in ["countries","lead_stages","lead_statuses","lead_sources","lead_scoring",
@@ -203,20 +193,15 @@ with st.sidebar:
 
 data = load_data("data")
 
-# Debug ranges to confirm slider overlap
-with st.expander("Debug: row counts and ranges", expanded=False):
-    def mm(s): s=pd.to_datetime(s, errors="coerce"); return f"{s.min()} → {s.max()}"
-    st.write({k: (0 if (v is None) else len(v)) for k,v in data.items()})
-    if data.get("leads") is not None and "CreatedOn" in data["leads"].columns: st.write("Leads CreatedOn:", mm(data["leads"]["CreatedOn"]))
-    if data.get("calls") is not None and "CallDateTime" in data["calls"].columns: st.write("Calls CallDateTime:", mm(data["calls"]["CallDateTime"]))
-    if data.get("schedules") is not None and "ScheduledDate" in data["schedules"].columns: st.write("Schedules ScheduledDate:", mm(data["schedules"]["ScheduledDate"]))
-
 def filter_by_date(datasets, grain_sel: str):
     out = dict(datasets)
     cands=[]
-    if out.get("leads") is not None and "CreatedOn" in out["leads"].columns: cands.append(pd.to_datetime(out["leads"]["CreatedOn"], errors="coerce"))
-    if out.get("calls") is not None and "CallDateTime" in out["calls"].columns: cands.append(pd.to_datetime(out["calls"]["CallDateTime"], errors="coerce"))
-    if out.get("schedules") is not None and "ScheduledDate" in out["schedules"].columns: cands.append(pd.to_datetime(out["schedules"]["ScheduledDate"], errors="coerce"))
+    if out.get("leads") is not None and "CreatedOn" in out["leads"].columns:
+        cands.append(pd.to_datetime(out["leads"]["CreatedOn"], errors="coerce"))
+    if out.get("calls") is not None and "CallDateTime" in out["calls"].columns:
+        cands.append(pd.to_datetime(out["calls"]["CallDateTime"], errors="coerce"))
+    if out.get("schedules") is not None and "ScheduledDate" in out["schedules"].columns:
+        cands.append(pd.to_datetime(out["schedules"]["ScheduledDate"], errors="coerce"))
 
     if cands:
         gmin=min([c.min() for c in cands if c is not None]).date()
@@ -269,25 +254,10 @@ def filter_by_date(datasets, grain_sel: str):
 fdata = filter_by_date(data, grain)
 
 # -----------------------------------------------------------------------------
-# Navigation
-# -----------------------------------------------------------------------------
-NAV = [("Executive","speedometer2","🎯 Executive Summary"),("Lead Status","people","📈 Lead Status"),("AI Calls","telephone","📞 AI Call Activity")]
-if HAS_OPTION_MENU:
-    selected = option_menu(None, [n[0] for n in NAV], icons=[n[1] for n in NAV], orientation="horizontal", default_index=0,
-                           styles={"container":{"padding":"0!important","background-color":"#0f1116"},
-                                   "icon":{"color":EXEC_PRIMARY,"font-size":"16px"},
-                                   "nav-link":{"font-size":"14px","color":"#d0d0d0","--hover-color":"#21252b"},
-                                   "nav-link-selected":{"background-color":EXEC_SURFACE}})
-else:
-    tabs = st.tabs([n[2] for n in NAV])
-    selected=None
-
-# -----------------------------------------------------------------------------
 # Executive Summary (Performance KPIs only)
 # -----------------------------------------------------------------------------
 def show_executive_summary(d):
-    leads=d.get("leads"); agents=d.get("agents"); calls=d.get("calls")
-    lead_statuses=d.get("lead_statuses"); countries=d.get("countries")
+    leads=d.get("leads"); calls=d.get("calls"); lead_statuses=d.get("lead_statuses")
     schedules=d.get("schedules"); ama=d.get("agent_meeting_assignment")
 
     if leads is None or len(leads)==0:
@@ -358,7 +328,8 @@ def show_executive_summary(d):
         ymax=float(pd.Series(ys).max()) if len(ys) else 1
         pad=max(1.0,(ymax-ymin)*0.12); rng=[ymin-pad, ymax+pad]
         fig.update_layout(height=180, title=dict(text=title, x=0.01, font=dict(size=12, color="#cfcfcf")),
-                          margin=dict(l=6,r=6,t=24,b=8), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white", showlegend=False)
+                          margin=dict(l=6,r=6,t=24,b=8), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                          font_color="white", showlegend=False)
         fig.update_xaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)", tickfont=dict(color="#a8a8a8", size=10), nticks=4, ticks="outside")
         fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)", tickfont=dict(color="#a8a8a8", size=10), nticks=3, ticks="outside", range=rng)
         return fig
@@ -457,6 +428,7 @@ def show_executive_summary(d):
     st.plotly_chart(fig_funnel, use_container_width=True)
 
     st.markdown("---"); st.subheader("Top markets")
+    countries=d.get("countries")
     if countries is not None and "CountryId" in leads.columns and "countryname_e" in countries.columns:
         geo = leads.groupby("CountryId").size().reset_index(name="Leads")
         geo = geo.merge(countries[["countryid","countryname_e"]].rename(columns={"countryid":"CountryId","countryname_e":"Country"}), on="CountryId", how="left")
@@ -496,76 +468,48 @@ def show_executive_summary(d):
         """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# Lead Status page
-# -----------------------------------------------------------------------------
-# -----------------------------------------------------------------------------
 # Lead Status page (robust to schema differences)
 # -----------------------------------------------------------------------------
 def show_lead_status(d):
     statuses = d.get("lead_statuses")
     leads = d.get("leads")
-
-    # Nothing to do if base frames are missing
     if leads is None or len(leads) == 0 or statuses is None or len(statuses) == 0:
-        st.info("No lead status data in the selected range.")
-        return
+        st.info("No lead status data in the selected range."); return
 
-    # Helper: pick the first existing column name from a candidate list (case-insensitive)
     def pick_col(df, candidates):
         m = {c.lower(): c for c in df.columns}
         for c in candidates:
-            if c.lower() in m:
-                return m[c.lower()]
+            if c.lower() in m: return m[c.lower()]
         return None
 
     s = statuses.copy()
-
-    # Resolve ID and Name columns across common variants
-    id_col = pick_col(s, ["leadstatusid", "lead_status_id", "statusid", "status_id"])
-    name_col = pick_col(s, ["statusname_e", "statusname", "status_name_e", "status_name", "name"])
-
+    id_col = pick_col(s, ["leadstatusid","lead_status_id","statusid","status_id"])
+    name_col = pick_col(s, ["statusname_e","statusname","status_name_e","status_name","name"])
     if id_col is None or name_col is None:
-        st.warning(f"Lead status columns not found (have: {list(s.columns)})")
-        return
+        st.warning(f"Lead status columns not found (have: {list(s.columns)})"); return
 
-    # Build label map safely
     lbl_map = dict(zip(s[id_col].astype(int), s[name_col].astype(str)))
-
-    # Compute counts by status
     if "LeadStatusId" not in leads.columns:
-        st.info("LeadStatusId column not present on leads after normalization.")
-        return
+        st.info("LeadStatusId column not present on leads after normalization."); return
 
     counts = leads["LeadStatusId"].value_counts(dropna=False).reset_index()
-    counts.columns = ["LeadStatusId", "count"]
+    counts.columns = ["LeadStatusId","count"]
     counts["label"] = counts["LeadStatusId"].map(lbl_map).fillna(counts["LeadStatusId"].astype(str))
 
-    # Pie + metrics
-    c1, c2 = st.columns([2, 1])
+    c1,c2 = st.columns([2,1])
     with c1:
-        fig = px.pie(
-            counts, names="label", values="count", hole=0.35,
-            color_discrete_sequence=px.colors.sequential.Viridis
-        )
+        fig = px.pie(counts, names="label", values="count", hole=0.35, color_discrete_sequence=px.colors.sequential.Viridis)
         fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white")
         st.plotly_chart(fig, use_container_width=True)
-
     with c2:
-        st.metric("Total Leads", f"{len(leads):,}")
-
-        # Optional rollups using detected columns (guarded)
-        # Won
+        st.metric("Total Leads", format_number(len(leads)))
         won_ids = s.loc[s[name_col].str.lower().eq("won"), id_col].astype(int).tolist()
         won = int(leads["LeadStatusId"].isin(won_ids).sum()) if won_ids else 0
-
-        # In discussion (any status whose name contains 'discussion')
         discuss_mask = s[name_col].str.contains("discussion", case=False, na=False)
         discuss_ids = s.loc[discuss_mask, id_col].astype(int).tolist()
         in_discuss = int(leads["LeadStatusId"].isin(discuss_ids).sum()) if discuss_ids else 0
-
-        st.metric("Won", f"{won:,}")
-        st.metric("In Discussion", f"{in_discuss:,}")
-
+        st.metric("Won", format_number(won))
+        st.metric("In Discussion", format_number(in_discuss))
 
 # -----------------------------------------------------------------------------
 # Calls page (basic)
@@ -590,14 +534,26 @@ def show_calls(d):
     st.dataframe(calls.head(1000), use_container_width=True)
 
 # -----------------------------------------------------------------------------
-# Router
+# Navigation (single path; no duplicates)
 # -----------------------------------------------------------------------------
+NAV = [("Executive","speedometer2","🎯 Executive Summary"),
+       ("Lead Status","people","📈 Lead Status"),
+       ("AI Calls","telephone","📞 AI Call Activity")]
+
 if HAS_OPTION_MENU:
-    if selected=="Executive": show_executive_summary(fdata)
-    elif selected=="Lead Status": show_lead_status(fdata)
-    elif selected=="AI Calls": show_calls(fdata)
+    selected = option_menu(
+        None, [n[0] for n in NAV], icons=[n[1] for n in NAV],
+        orientation="horizontal", default_index=0,
+        styles={"container":{"padding":"0!important","background-color":"#0f1116"},
+                "icon":{"color":EXEC_PRIMARY,"font-size":"16px"},
+                "nav-link":{"font-size":"14px","color":"#d0d0d0","--hover-color":"#21252b"},
+                "nav-link-selected":{"background-color":EXEC_SURFACE}}
+    )
+    if selected=="Executive":        show_executive_summary(fdata)
+    elif selected=="Lead Status":    show_lead_status(fdata)
+    elif selected=="AI Calls":       show_calls(fdata)
 else:
-    tabs = st.tabs(["🎯 Executive Summary", "📈 Lead Status", "📞 AI Call Activity"])
-    with tabs[0]: show_executive_summary(fdata)
-    with tabs[1]: show_lead_status(fdata)
-    with tabs[2]: show_calls(fdata)
+    t1, t2, t3 = st.tabs([n[2] for n in NAV])
+    with t1: show_executive_summary(fdata)
+    with t2: show_lead_status(fdata)
+    with t3: show_calls(fdata)
