@@ -617,11 +617,17 @@ def show_executive_summary(d):
 def show_lead_status(d):
     leads = d.get("leads")
     statuses = d.get("lead_statuses")
-    if leads is None or len(leads) == 0 or statuses is None or len(statuses) == 0:
-        st.info("No lead status data in the selected range.")
+    schedules = d.get("schedules")
+    ama = d.get("agent_meeting_assignment")
+
+    if leads is None or len(leads) == 0:
+        st.info("No lead data in the selected range.")
+        return
+    if statuses is None or len(statuses) == 0:
+        st.info("No status lookup loaded; cannot build distribution.")
         return
 
-    # Resolve columns (case-insensitive)
+    # ---------- Helpers ----------
     def pick_col(df, candidates):
         m = {c.lower(): c for c in df.columns}
         for c in candidates:
@@ -629,69 +635,150 @@ def show_lead_status(d):
                 return m[c.lower()]
         return None
 
+    def safe_ids(df, col):
+        try:
+            return set(pd.to_numeric(df[col], errors="coerce").dropna().astype(int).unique())
+        except Exception:
+            return set()
+
+    # ---------- Resolve lookup columns and merge names ----------
     s = statuses.copy()
-    id_col   = pick_col(s, ["leadstatusid", "lead_status_id", "statusid", "status_id"])
-    name_col = pick_col(s, ["statusname_e", "statusname", "status_name_e", "status_name", "name"])
+    id_col   = pick_col(s, ["leadstatusid","lead_status_id","statusid","status_id"])
+    name_col = pick_col(s, ["statusname_e","statusname","status_name_e","status_name","name"])
     if id_col is None or name_col is None:
         st.warning(f"Lead status columns not found (have: {list(s.columns)})")
         return
 
-    # Merge status names onto leads
     s_slim = s[[id_col, name_col]].rename(columns={id_col: "LeadStatusId", name_col: "StatusName"})
     if "LeadStatusId" not in leads.columns:
         st.info("LeadStatusId column not present on leads after normalization.")
         return
+
     df = leads.merge(s_slim, on="LeadStatusId", how="left")
     df["StatusName"] = df["StatusName"].astype(str).str.strip()
+    all_ids = safe_ids(df, "LeadId")
+    if not all_ids:
+        st.info("No LeadId values present after normalization.")
+        return
 
-    # Bucketize to canonical labels
-    def bucketize(x: str) -> str:
-        xl = x.lower()
-        if "new" in xl: return "New"
-        if "won" in xl or "contract" in xl or "signed" in xl: return "Closed Won"
-        if "lost" in xl or "reject" in xl or "dead" in xl: return "Closed Lost"
-        if "interest" in xl: return "Interested"
-        return "In Progress"
+    # ---------- Status-based sets ----------
+    s_lc = s.copy()
+    s_lc.columns = s_lc.columns.str.lower()
+    name_lc = name_col.lower()
 
-    df["Bucket"] = df["StatusName"].apply(bucketize)
+    def status_ids_by_names(names):
+        if name_lc not in s_lc.columns or "leadstatusid" not in s_lc.columns:
+            return set()
+        mask = s_lc[name_lc].astype(str).str.lower().isin([n.lower() for n in names])
+        return set(pd.to_numeric(s_lc.loc[mask, "leadstatusid"], errors="coerce").dropna().astype(int).unique())
 
-    # Build counts deterministically to guarantee columns
-    order = ["New", "In Progress", "Interested", "Closed Won", "Closed Lost"]
-    vc = df["Bucket"].value_counts()
+    # Contract Signed = Won (and similar)
+    won_sid = status_ids_by_names(["won","closed won","contract signed","signed"])
+    # Lost
+    lost_sid = status_ids_by_names(["lost","closed lost","rejected","dead"])
+    # Interested (name contains 'interest')
+    interested_sid = set()
+    if name_lc in s_lc.columns:
+        interested_sid = set(
+            pd.to_numeric(
+                s_lc.loc[s_lc[name_lc].astype(str).str.contains("interest", case=False, na=False), "leadstatusid"],
+                errors="coerce",
+            ).dropna().astype(int).unique()
+        )
+    # New (name contains 'new')
+    new_sid = set()
+    if name_lc in s_lc.columns:
+        new_sid = set(
+            pd.to_numeric(
+                s_lc.loc[s_lc[name_lc].astype(str).str.contains("new", case=False, na=False), "leadstatusid"],
+                errors="coerce",
+            ).dropna().astype(int).unique()
+        )
+
+    # ---------- Meeting Scheduled set (from schedules or AMA) ----------
+    meeting_ids = set()
+    if schedules is not None and {"LeadId"}.issubset(schedules.columns):
+        meeting_ids |= safe_ids(schedules, "LeadId")
+    if ama is not None:
+        m = ama.copy(); m.columns = m.columns.str.lower()
+        if "leadid" in m.columns:
+            # If meetingstatusid exists, restrict to scheduled/confirmed {1,6}
+            if "meetingstatusid" in m.columns and m["meetingstatusid"].notna().any():
+                m = m[m["meetingstatusid"].isin({1,6})]
+            meeting_ids |= set(pd.to_numeric(m["leadid"], errors="coerce").dropna().astype(int).unique())
+
+    # ---------- Build mutually exclusive buckets by precedence ----------
+    # Map LeadId -> current bucket, respecting precedence:
+    # Contract Signed > Lost > Meeting Scheduled > Interested > New
+    bucket_by_id = {}
+
+    # Precompute id sets by status
+    df_ids_by_status = {}
+    for label, sid_set in [
+        ("Contract Signed", won_sid),
+        ("Lost",            lost_sid),
+        ("Interested",      interested_sid),
+        ("New",             new_sid),
+    ]:
+        if sid_set:
+            ids = set(pd.to_numeric(df.loc[df["LeadStatusId"].isin(sid_set), "LeadId"], errors="coerce").dropna().astype(int).unique())
+        else:
+            ids = set()
+        df_ids_by_status[label] = ids
+
+    # Apply precedence
+    for lid in all_ids:
+        if lid in df_ids_by_status["Contract Signed"]:
+            bucket_by_id[lid] = "Contract Signed"
+        elif lid in df_ids_by_status["Lost"]:
+            bucket_by_id[lid] = "Lost"
+        elif lid in meeting_ids:
+            bucket_by_id[lid] = "Meeting Scheduled"
+        elif lid in df_ids_by_status["Interested"]:
+            bucket_by_id[lid] = "Interested"
+        elif lid in df_ids_by_status["New"]:
+            bucket_by_id[lid] = "New"
+        else:
+            # If nothing matches, treat as Interested by default (adjust if desired)
+            bucket_by_id[lid] = "Interested"
+
+    # ---------- Counts in requested order ----------
+    order = ["New", "Interested", "Meeting Scheduled", "Contract Signed", "Lost"]
+    vc = pd.Series(list(bucket_by_id.values())).value_counts()
     counts = pd.DataFrame({
         "Bucket": order,
         "Count": [int(vc.get(k, 0)) for k in order],
     })
-    counts["Bucket"] = counts["Bucket"].astype(str)
-    counts["Count"] = pd.to_numeric(counts["Count"], errors="coerce").fillna(0).astype(int)
+
+    # Safe fallback if everything is zero (shouldn't happen with bucket default)
     if counts["Count"].sum() == 0:
-        counts = pd.DataFrame({"Bucket": ["No Data"], "Count": [1]})
-        order = ["No Data"]
+        counts = pd.DataFrame({"Bucket": ["New","Interested","Meeting Scheduled","Contract Signed","Lost"],
+                               "Count": [0,0,0,0,0]})
 
-    # Metrics
-    total_leads = int(len(df))
-    wins = int((df["Bucket"] == "Closed Won").sum())
-    losses = int((df["Bucket"] == "Closed Lost").sum())
-    active_leads = int(total_leads - wins - losses)
-    win_rate = (wins / (wins + losses) * 100.0) if (wins + losses) > 0 else 0.0
-    conversion_rate = (wins / total_leads * 100.0) if total_leads > 0 else 0.0
+    # ---------- Metrics ----------
+    total_leads = int(len(all_ids))
+    signed_count = int(vc.get("Contract Signed", 0))
+    lost_count   = int(vc.get("Lost", 0))
+    active_leads = int(total_leads - signed_count - lost_count)
+    win_rate = (signed_count / (signed_count + lost_count) * 100.0) if (signed_count + lost_count) > 0 else 0.0
+    conversion_rate = (signed_count / total_leads * 100.0) if total_leads > 0 else 0.0
 
+    # ---------- Render ----------
     left, right = st.columns([2, 1], gap="large")
     with left:
         fig = px.pie(
             counts,
             names="Bucket",
             values="Count",
-            hole=0.55,
+            hole=0.55,                                   # donut
             category_orders={"Bucket": order},
             color="Bucket",
             color_discrete_map={
                 "New": "#1E90FF",
-                "In Progress": "#F4A300",
                 "Interested": "#43A047",
-                "Closed Won": "#7CFC00",
-                "Closed Lost": "#DC143C",
-                "No Data": "#6b7280",
+                "Meeting Scheduled": "#DAA520",
+                "Contract Signed": "#7CFC00",
+                "Lost": "#DC143C",
             },
             title="Lead Distribution by Status",
         )
