@@ -279,26 +279,88 @@ def show_executive_summary(d):
         "Year to Date": (year_start, today),
     }
     cols = st.columns(3)
+    
+    def _safe_ids(df, col):
+        try:
+            return set(df[col].dropna().astype(int).unique())
+        except Exception:
+            return set()
+    
     for (label, (start, end)), col in zip(date_ranges.items(), cols):
-        leads_period = leads.loc[(pd.to_datetime(leads["CreatedOn"], errors="coerce") >= pd.Timestamp(start)) & (pd.to_datetime(leads["CreatedOn"], errors="coerce") <= pd.Timestamp(end))] if "CreatedOn" in leads.columns else pd.DataFrame()
-        meetings_cnt = 0
-        if schedules is not None and "ScheduledDate" in schedules.columns:
-            s = schedules.copy(); s["_dt"] = pd.to_datetime(s["ScheduledDate"], errors="coerce"); s = s[(s["_dt"]>=pd.Timestamp(start)) & (s["_dt"]<=pd.Timestamp(end))]
-            meetings_cnt = int(s["LeadId"].nunique()) if "LeadId" in s.columns else len(s)
-        elif ama is not None:
-            m = ama.copy(); m.columns = m.columns.str.lower()
-            if "startdatetime" in m.columns:
-                m["_dt"] = pd.to_datetime(m["startdatetime"], errors="coerce"); m = m[(m["_dt"]>=pd.Timestamp(start)) & (m["_dt"]<=pd.Timestamp(end))]
-                if "meetingstatusid" in m.columns: m = m[m["meetingstatusid"].isin({1,6})]
-                meetings_cnt = int(m["leadid"].nunique()) if "leadid" in m.columns else len(m)
-        total_leads = int(len(leads_period))
-        won_leads = int((leads_period["LeadStatusId"]==won_status_id).sum()) if "LeadStatusId" in leads_period.columns else 0
-        conversion_rate = (won_leads/total_leads*100.0) if total_leads else 0.0
+        start_ts, end_ts = pd.Timestamp(start), pd.Timestamp(end)
+    
+        # Leads created in window
+        if ("CreatedOn" in leads.columns) and ("LeadId" in leads.columns):
+            lp_mask = (pd.to_datetime(leads["CreatedOn"], errors="coerce") >= start_ts) & \
+                      (pd.to_datetime(leads["CreatedOn"], errors="coerce") <= end_ts)
+            leads_period = leads.loc[lp_mask].copy()
+            created_ids = _safe_ids(leads_period, "LeadId")
+        else:
+            leads_period = pd.DataFrame()
+            created_ids = set()
+    
+        # Calls in window -> active LeadIds
+        call_ids = set()
+        if (d.get("calls") is not None) and {"CallDateTime","LeadId"}.issubset(d["calls"].columns):
+            cc = d["calls"].copy()
+            c_mask = (pd.to_datetime(cc["CallDateTime"], errors="coerce") >= start_ts) & \
+                     (pd.to_datetime(cc["CallDateTime"], errors="coerce") <= end_ts)
+            call_ids = _safe_ids(cc.loc[c_mask], "LeadId")
+    
+        # Meetings scheduled in window -> LeadIds
+        sched_ids = set()
+        if (d.get("schedules") is not None) and {"ScheduledDate","LeadId"}.issubset(d["schedules"].columns):
+            ss = d["schedules"].copy()
+            s_mask = (pd.to_datetime(ss["ScheduledDate"], errors="coerce") >= start_ts) & \
+                     (pd.to_datetime(ss["ScheduledDate"], errors="coerce") <= end_ts)
+            sched_ids = _safe_ids(ss.loc[s_mask], "LeadId")
+        elif d.get("agent_meeting_assignment") is not None:
+            ama_df = d["agent_meeting_assignment"].copy()
+            ama_df.columns = ama_df.columns.str.lower()
+            if {"startdatetime","leadid"}.issubset(ama_df.columns):
+                ama_df["_dt"] = pd.to_datetime(ama_df["startdatetime"], errors="coerce")
+                m_mask = (ama_df["_dt"] >= start_ts) & (ama_df["_dt"] <= end_ts)
+                # If meetingstatusid exists, keep scheduled/confirmed {1,6}
+                if "meetingstatusid" in ama_df.columns:
+                    ama_df = ama_df.loc[m_mask & ama_df["meetingstatusid"].isin({1,6})]
+                else:
+                    ama_df = ama_df.loc[m_mask]
+                try:
+                    sched_ids = set(ama_df["leadid"].dropna().astype(int).unique())
+                except Exception:
+                    sched_ids = set()
+    
+        # Active leads in window = any of: created, called, scheduled
+        active_ids = created_ids | call_ids | sched_ids
+    
+        # KPI: Total Leads in window
+        # Prefer created count; if no created, use active (engaged) count to avoid zeros
+        total_leads = len(created_ids) if len(created_ids) > 0 else len(active_ids)
+    
+        # KPI: Meetings Scheduled = unique leads with a meeting scheduled in the window
+        meetings_cnt = len(sched_ids)
+    
+        # KPI: Conversion Rate among active leads (or created leads if available)
+        if "LeadStatusId" in leads.columns and "LeadId" in leads.columns:
+            base_ids = created_ids if len(created_ids) > 0 else active_ids
+            if len(base_ids):
+                base_df = leads.loc[leads["LeadId"].astype("Int64").isin(list(base_ids))].copy()
+                won_leads = int((base_df["LeadStatusId"] == won_status_id).sum()) if "LeadStatusId" in base_df.columns else 0
+                conversion_rate = (won_leads / len(base_ids) * 100.0) if len(base_ids) else 0.0
+            else:
+                conversion_rate = 0.0
+        else:
+            conversion_rate = 0.0
+    
         with col:
             st.markdown(f"#### {label}")
-            st.markdown("**Total Leads**"); st.markdown(f"<span style='font-size:2rem;'>{total_leads}</span>", unsafe_allow_html=True)
-            st.markdown("**Conversion Rate**"); st.markdown(f"<span style='font-size:2rem;'>{conversion_rate:.1f}%</span>", unsafe_allow_html=True)
-            st.markdown("**Meetings Scheduled**"); st.markdown(f"<span style='font-size:2rem;'>{meetings_cnt}</span>", unsafe_allow_html=True)
+            st.markdown("**Total Leads**")
+            st.markdown(f"<span style='font-size:2rem;'>{int(total_leads)}</span>", unsafe_allow_html=True)
+            st.markdown("**Conversion Rate**")
+            st.markdown(f"<span style='font-size:2rem;'>{conversion_rate:.1f}%</span>", unsafe_allow_html=True)
+            st.markdown("**Meetings Scheduled**")
+            st.markdown(f"<span style='font-size:2rem;'>{int(meetings_cnt)}</span>", unsafe_allow_html=True)
+
 
     st.markdown("---"); st.subheader("Trend at a glance")
     trend_style = st.radio("Trend style", ["Line","Bars","Bullet"], index=0, horizontal=True, key="__trend_style_exec")
