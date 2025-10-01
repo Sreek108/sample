@@ -615,45 +615,104 @@ def show_executive_summary(d):
 # Lead Status page (robust to schema differences)
 # -----------------------------------------------------------------------------
 def show_lead_status(d):
-    statuses = d.get("lead_statuses")
     leads = d.get("leads")
+    statuses = d.get("lead_statuses")
     if leads is None or len(leads) == 0 or statuses is None or len(statuses) == 0:
-        st.info("No lead status data in the selected range."); return
+        st.info("No lead status data in the selected range.")
+        return
 
+    # Resolve ID/Name columns safely (case-insensitive)
     def pick_col(df, candidates):
         m = {c.lower(): c for c in df.columns}
         for c in candidates:
-            if c.lower() in m: return m[c.lower()]
+            if c.lower() in m:
+                return m[c.lower()]
         return None
 
     s = statuses.copy()
-    id_col = pick_col(s, ["leadstatusid","lead_status_id","statusid","status_id"])
-    name_col = pick_col(s, ["statusname_e","statusname","status_name_e","status_name","name"])
+    id_col   = pick_col(s, ["leadstatusid", "lead_status_id", "statusid", "status_id"])
+    name_col = pick_col(s, ["statusname_e", "statusname", "status_name_e", "status_name", "name"])
     if id_col is None or name_col is None:
-        st.warning(f"Lead status columns not found (have: {list(s.columns)})"); return
+        st.warning(f"Lead status columns not found (have: {list(s.columns)})")
+        return
 
-    lbl_map = dict(zip(s[id_col].astype(int), s[name_col].astype(str)))
-    if "LeadStatusId" not in leads.columns:
-        st.info("LeadStatusId column not present on leads after normalization."); return
+    # Merge status names onto leads
+    s_slim = s[[id_col, name_col]].rename(columns={id_col: "LeadStatusId", name_col: "StatusName"})
+    df = leads.copy()
+    if "LeadStatusId" not in df.columns:
+        st.info("LeadStatusId column not present on leads after normalization.")
+        return
+    df = df.merge(s_slim, on="LeadStatusId", how="left")
+    df["StatusName"] = df["StatusName"].astype(str).str.strip()
 
-    counts = leads["LeadStatusId"].value_counts(dropna=False).reset_index()
-    counts.columns = ["LeadStatusId","count"]
-    counts["label"] = counts["LeadStatusId"].map(lbl_map).fillna(counts["LeadStatusId"].astype(str))
+    # Map names into 5 canonical buckets for a clean donut like the screenshot
+    # Order: New, In Progress, Interested, Closed Won, Closed Lost
+    def bucketize(x: str) -> str:
+        xl = x.lower()
+        if "new" in xl: return "New"
+        if "won" in xl or "contract" in xl or "signed" in xl: return "Closed Won"
+        if "lost" in xl or "closed lost" in xl or "reject" in xl or "dead" in xl: return "Closed Lost"
+        if "interest" in xl: return "Interested"
+        # Default everything else to In Progress for a compact view
+        return "In Progress"
 
-    c1,c2 = st.columns([2,1])
-    with c1:
-        fig = px.pie(counts, names="label", values="count", hole=0.35, color_discrete_sequence=px.colors.sequential.Viridis)
-        fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+    df["Bucket"] = df["StatusName"].apply(bucketize)
+
+    # Donut data (keep fixed order to match legend)
+    order = ["New", "In Progress", "Interested", "Closed Won", "Closed Lost"]
+    counts = (
+        df["Bucket"].value_counts()
+          .reindex(order, fill_value=0)
+          .reset_index()
+          .rename(columns={"index": "Bucket", "Bucket": "Count"})
+    )
+
+    # Metrics
+    total_leads = int(len(df))
+    wins = int((df["Bucket"] == "Closed Won").sum())
+    losses = int((df["Bucket"] == "Closed Lost").sum())
+    active_leads = int(total_leads - wins - losses)
+    win_rate = (wins / (wins + losses) * 100.0) if (wins + losses) > 0 else 0.0
+    conversion_rate = (wins / total_leads * 100.0) if total_leads > 0 else 0.0
+
+    # Layout: donut left, metrics right
+    left, right = st.columns([2, 1], gap="large")
+
+    with left:
+        fig = px.pie(
+            counts,
+            names="Bucket",
+            values="Count",
+            # hole creates a donut chart in px.pie
+            hole=0.55,
+            color="Bucket",
+            color_discrete_map={
+                "New": "#1E90FF",
+                "In Progress": "#F4A300",
+                "Interested": "#43A047",
+                "Closed Won": "#7CFC00",
+                "Closed Lost": "#DC143C",
+            },
+            title="Lead Distribution by Status",
+        )
+        fig.update_traces(textposition="inside", textinfo="label+percent")
+        fig.update_layout(
+            height=420,
+            margin=dict(l=0, r=0, t=40, b=0),
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font_color="white",
+            showlegend=True,
+            legend=dict(orientation="v", yanchor="top", y=1.0, xanchor="left", x=1.02),
+        )
         st.plotly_chart(fig, use_container_width=True)
-    with c2:
-        st.metric("Total Leads", format_number(len(leads)))
-        won_ids = s.loc[s[name_col].str.lower().eq("won"), id_col].astype(int).tolist()
-        won = int(leads["LeadStatusId"].isin(won_ids).sum()) if won_ids else 0
-        discuss_mask = s[name_col].str.contains("discussion", case=False, na=False)
-        discuss_ids = s.loc[discuss_mask, id_col].astype(int).tolist()
-        in_discuss = int(leads["LeadStatusId"].isin(discuss_ids).sum()) if discuss_ids else 0
-        st.metric("Won", format_number(won))
-        st.metric("In Discussion", format_number(in_discuss))
+
+    with right:
+        st.subheader("Lead Metrics")
+        st.metric("Total Leads", f"{total_leads:,}")
+        st.metric("Active Leads", f"{active_leads:,}")
+        st.metric("Win Rate", f"{win_rate:.1f}%")
+        st.metric("Conversion Rate", f"{conversion_rate:.1f}%")
 
 # -----------------------------------------------------------------------------
 # Calls page (basic)
