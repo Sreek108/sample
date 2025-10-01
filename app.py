@@ -621,7 +621,7 @@ def show_lead_status(d):
         st.info("No lead status data in the selected range.")
         return
 
-    # Resolve ID/Name columns safely (case-insensitive)
+    # --- Resolve columns (case-insensitive) ---
     def pick_col(df, candidates):
         m = {c.lower(): c for c in df.columns}
         for c in candidates:
@@ -638,34 +638,38 @@ def show_lead_status(d):
 
     # Merge status names onto leads
     s_slim = s[[id_col, name_col]].rename(columns={id_col: "LeadStatusId", name_col: "StatusName"})
-    df = leads.copy()
-    if "LeadStatusId" not in df.columns:
+    if "LeadStatusId" not in leads.columns:
         st.info("LeadStatusId column not present on leads after normalization.")
         return
-    df = df.merge(s_slim, on="LeadStatusId", how="left")
+    df = leads.merge(s_slim, on="LeadStatusId", how="left")
     df["StatusName"] = df["StatusName"].astype(str).str.strip()
 
-    # Map names into 5 canonical buckets for a clean donut like the screenshot
-    # Order: New, In Progress, Interested, Closed Won, Closed Lost
+    # Bucketize to canonical labels
     def bucketize(x: str) -> str:
         xl = x.lower()
         if "new" in xl: return "New"
         if "won" in xl or "contract" in xl or "signed" in xl: return "Closed Won"
-        if "lost" in xl or "closed lost" in xl or "reject" in xl or "dead" in xl: return "Closed Lost"
+        if "lost" in xl or "reject" in xl or "dead" in xl: return "Closed Lost"
         if "interest" in xl: return "Interested"
-        # Default everything else to In Progress for a compact view
         return "In Progress"
 
     df["Bucket"] = df["StatusName"].apply(bucketize)
 
-    # Donut data (keep fixed order to match legend)
+    # Donut data with fixed order
     order = ["New", "In Progress", "Interested", "Closed Won", "Closed Lost"]
     counts = (
-        df["Bucket"].value_counts()
-          .reindex(order, fill_value=0)
-          .reset_index()
-          .rename(columns={"index": "Bucket", "Bucket": "Count"})
+        df["Bucket"]
+        .value_counts()
+        .reindex(order, fill_value=0)
+        .reset_index()
+        .rename(columns={"index": "Bucket", "Bucket": "Count"})
     )
+    # Ensure correct dtypes/columns and a safe fallback if everything is zero
+    counts["Bucket"] = counts["Bucket"].astype(str)
+    counts["Count"] = pd.to_numeric(counts["Count"], errors="coerce").fillna(0).astype(int)
+    if counts["Count"].sum() == 0:
+        counts = pd.DataFrame({"Bucket": ["No Data"], "Count": [1]})
+        order = ["No Data"]  # update order to the placeholder
 
     # Metrics
     total_leads = int(len(df))
@@ -675,16 +679,14 @@ def show_lead_status(d):
     win_rate = (wins / (wins + losses) * 100.0) if (wins + losses) > 0 else 0.0
     conversion_rate = (wins / total_leads * 100.0) if total_leads > 0 else 0.0
 
-    # Layout: donut left, metrics right
     left, right = st.columns([2, 1], gap="large")
-
     with left:
         fig = px.pie(
             counts,
             names="Bucket",
             values="Count",
-            # hole creates a donut chart in px.pie
-            hole=0.55,
+            hole=0.55,                                  # donut chart
+            category_orders={"Bucket": order},          # enforce legend/order
             color="Bucket",
             color_discrete_map={
                 "New": "#1E90FF",
@@ -692,6 +694,7 @@ def show_lead_status(d):
                 "Interested": "#43A047",
                 "Closed Won": "#7CFC00",
                 "Closed Lost": "#DC143C",
+                "No Data": "#6b7280",
             },
             title="Lead Distribution by Status",
         )
