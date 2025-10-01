@@ -621,7 +621,7 @@ def show_lead_status(d):
         st.info("No lead status data in the selected range.")
         return
 
-    # --- Resolve columns (case-insensitive) ---
+    # Resolve columns (case-insensitive)
     def pick_col(df, candidates):
         m = {c.lower(): c for c in df.columns}
         for c in candidates:
@@ -655,21 +655,18 @@ def show_lead_status(d):
 
     df["Bucket"] = df["StatusName"].apply(bucketize)
 
-    # Donut data with fixed order
+    # Build counts deterministically to guarantee columns
     order = ["New", "In Progress", "Interested", "Closed Won", "Closed Lost"]
-    counts = (
-        df["Bucket"]
-        .value_counts()
-        .reindex(order, fill_value=0)
-        .reset_index()
-        .rename(columns={"index": "Bucket", "Bucket": "Count"})
-    )
-    # Ensure correct dtypes/columns and a safe fallback if everything is zero
+    vc = df["Bucket"].value_counts()
+    counts = pd.DataFrame({
+        "Bucket": order,
+        "Count": [int(vc.get(k, 0)) for k in order],
+    })
     counts["Bucket"] = counts["Bucket"].astype(str)
     counts["Count"] = pd.to_numeric(counts["Count"], errors="coerce").fillna(0).astype(int)
     if counts["Count"].sum() == 0:
         counts = pd.DataFrame({"Bucket": ["No Data"], "Count": [1]})
-        order = ["No Data"]  # update order to the placeholder
+        order = ["No Data"]
 
     # Metrics
     total_leads = int(len(df))
@@ -685,8 +682,8 @@ def show_lead_status(d):
             counts,
             names="Bucket",
             values="Count",
-            hole=0.55,                                  # donut chart
-            category_orders={"Bucket": order},          # enforce legend/order
+            hole=0.55,
+            category_orders={"Bucket": order},
             color="Bucket",
             color_discrete_map={
                 "New": "#1E90FF",
