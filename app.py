@@ -273,7 +273,11 @@ def show_executive_summary(d):
     week_start = today - pd.Timedelta(days=today.weekday())
     month_start = today.replace(day=1)
     year_start = today.replace(month=1, day=1)
-    date_ranges = {"Week to Date": (week_start, today), "Month to Date": (month_start, today), "Year to Date": (year_start, today))
+    date_ranges = {
+        "Week to Date": (week_start, today),
+        "Month to Date": (month_start, today),
+        "Year to Date": (year_start, today),
+    }
     cols = st.columns(3)
     for (label, (start, end)), col in zip(date_ranges.items(), cols):
         leads_period = leads.loc[(pd.to_datetime(leads["CreatedOn"], errors="coerce") >= pd.Timestamp(start)) & (pd.to_datetime(leads["CreatedOn"], errors="coerce") <= pd.Timestamp(end))] if "CreatedOn" in leads.columns else pd.DataFrame()
