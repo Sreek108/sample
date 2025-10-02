@@ -264,9 +264,10 @@ def filter_by_date(datasets, grain_sel: str):
 
 fdata = filter_by_date(data, grain)
 
-# Helper for funnel
+# CORRECTED FUNNEL: New → Interested → Meeting Scheduled → Negotiation → Won → Lost
 def render_funnel_and_markets(d):
-    stage_order = ["New", "Qualified", "Meeting Scheduled", "Negotiation", "Contract Signed", "Lost"]
+    # Define the proper funnel stages in order
+    stage_order = ["New", "Interested", "Meeting Scheduled", "Negotiation", "Won", "Lost"]
 
     leads = norm(d.get("leads"))
     statuses = norm(d.get("lead_statuses"))
@@ -286,64 +287,79 @@ def render_funnel_and_markets(d):
             .astype(int)
         )
 
+    # Get all leads in the cohort
     cohort = leads.copy()
-    cohort.index = cohort["leadid"]
-    cohort["hasmeeting"] = False
+    
+    # Get status ID sets for each stage
+    new_ids = ids_from_status_names(["New", "Fresh", "Uncontacted"])
+    interested_ids = ids_from_status_names(["Interested", "Qualified", "Hot", "Warm"])
+    negotiation_ids = ids_from_status_names(["Negotiation", "On Hold", "Awaiting Budget", "Proposal Sent"])
+    won_ids = ids_from_status_names(["Won", "Closed Won", "Contract Signed"])
+    lost_ids = ids_from_status_names(["Lost", "Closed Lost", "Dead", "Not Interested"])
+
+    # Check for meetings scheduled
+    cohort["has_meeting"] = False
     if ama is not None and {"leadid", "meetingstatusid", "startdatetime"}.issubset(ama.columns):
-        amavalid = ama.loc[
-            ama["leadid"].isin(cohort["leadid"])
-            & ama["meetingstatusid"].isin({1, 6})
-            & (pd.to_datetime(ama["startdatetime"], errors="coerce") <= pd.Timestamp.now())
-        ]
-        if not amavalid.empty:
-            cohort.loc[amavalid["leadid"], "hasmeeting"] = True
+        meeting_lead_ids = ama.loc[
+            ama["meetingstatusid"].isin({1, 6}) &
+            (pd.to_datetime(ama["startdatetime"], errors="coerce") <= pd.Timestamp.now()),
+            "leadid"
+        ].dropna().astype(int).unique()
+        cohort["has_meeting"] = cohort["leadid"].isin(meeting_lead_ids)
 
-    qualified_ids = ids_from_status_names(["Qualified"])
-    won_ids = ids_from_status_names(["Won"])
-    lost_ids = ids_from_status_names(["Lost"])
-    negotiation_ids = ids_from_status_names(["Negotiation", "On Hold", "Awaiting Budget"])
-
-    cohort["qualified"] = cohort["leadstatusid"].isin(qualified_ids)
-    cohort["won"] = cohort["leadstatusid"].isin(won_ids)
-    cohort["lost"] = cohort["leadstatusid"].isin(lost_ids)
-    cohort["negotiation"] = cohort["leadstatusid"].isin(negotiation_ids)
-
-    def stage_resolver(row):
-        if row["won"]:
-            return "Contract Signed"
-        if row["lost"]:
+    # Assign each lead to ONE stage based on progression hierarchy
+    def assign_stage(row):
+        status_id = row.get("leadstatusid")
+        has_meeting = row.get("has_meeting", False)
+        
+        # Check stages in reverse order of progression (most advanced first)
+        if status_id in lost_ids:
             return "Lost"
-        if row["negotiation"]:
+        if status_id in won_ids:
+            return "Won"
+        if status_id in negotiation_ids:
             return "Negotiation"
-        if row["hasmeeting"]:
+        if has_meeting:
             return "Meeting Scheduled"
-        if row["qualified"]:
-            return "Qualified"
+        if status_id in interested_ids:
+            return "Interested"
+        # Default to New
         return "New"
 
-    cohort["Stage"] = cohort.apply(stage_resolver, axis=1)
-    cohort["Stage"] = pd.Categorical(cohort["Stage"], categories=stage_order, ordered=True)
+    cohort["Stage"] = cohort.apply(assign_stage, axis=1)
+    
+    # Count leads in each stage
+    stage_counts = cohort["Stage"].value_counts().to_dict()
+    
+    # Build funnel dataframe with all stages (even if count is 0)
+    funnel_data = []
+    for stage in stage_order:
+        funnel_data.append({
+            "Stage": stage,
+            "Count": stage_counts.get(stage, 0)
+        })
+    
+    funnel_df = pd.DataFrame(funnel_data)
 
-    funnel = cohort.groupby("Stage").size().reindex(stage_order, fill_value=0).reset_index(name="Count")
-    funnel.columns = ["Stage", "Count"]
-
+    # Create the funnel chart
     fig = px.funnel(
-        funnel,
+        funnel_df,
         x="Count",
         y="Stage",
         category_orders={"Stage": stage_order},
         color_discrete_sequence=[EXEC_BLUE, EXEC_GREEN, EXEC_PRIMARY, "#FFA500", "#7CFC00", EXEC_DANGER],
         text="Count",
     )
-    fig.update_traces(textposition="inside", textfont_color="black", textinfo="value+percent initial")
+    fig.update_traces(textposition="inside", textfont_color="white", textinfo="value+percent initial")
     fig.update_layout(
-        height=360,
+        height=400,
         margin=dict(l=0, r=0, t=10, b=10),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)"
     )
     st.plotly_chart(fig, use_container_width=True)
 
+    # Top markets section
     if countries is not None and "countryid" in leads.columns and "countryname_e" in countries.columns:
         bycountry = (
             leads.groupby("countryid", dropna=True)
@@ -598,7 +614,7 @@ def show_executive_summary(d):
         with s3:
             st.plotly_chart(tile_bullet(meet_ts, "Meetings index", EXEC_PRIMARY), use_container_width=True)
 
-    # Lead conversion snapshot - FIXED INDENTATION
+    # Lead conversion snapshot
     st.markdown("---")
     st.subheader("Lead conversion snapshot")
     render_funnel_and_markets(d)
