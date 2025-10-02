@@ -338,13 +338,20 @@ def render_funnel_and_markets(d):
         text="Count",
     )
     
-    # Actual counts in reverse order
+    # Calculate proper percentages relative to New (total leads)
     actual_counts = [lost_count, won_count, negotiation_count, meeting_count, interested_count, total_leads]
+    percentages = []
+    for count in actual_counts:
+        if total_leads > 0:
+            pct = (count / total_leads) * 100
+            percentages.append(f"{count}<br>{pct:.1f}%")
+        else:
+            percentages.append(f"{count}<br>0%")
+    
     fig.update_traces(
         textposition="inside", 
         textfont_color="white", 
-        texttemplate="%{text}<br>%{percentInitial}",
-        text=actual_counts
+        text=percentages
     )
     
     fig.update_layout(
@@ -382,7 +389,6 @@ def render_funnel_and_markets(d):
         )
     else:
         st.info("Country data unavailable to build Top markets.")
-
 # Executive Summary
 def show_executive_summary(d):
     # Get ALL leads (not filtered) for proper KPI calculation
