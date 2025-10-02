@@ -554,7 +554,7 @@ def show_executive_summary(d):
     d_filtered["leads"] = filtered_leads
     render_funnel_and_markets(d_filtered)
 
-# Lead Status
+# Lead Status with VERTICAL bar chart
 def show_lead_status(d):
     leads = d.get("leads")
     statuses = d.get("lead_statuses")
@@ -595,11 +595,28 @@ def show_lead_status(d):
     st.markdown("---")
     st.subheader("Lead Distribution Status")
 
-    dist_sorted = counts.sort_values("count", ascending=True)
-    fig_bar = px.bar(dist_sorted, x="count", y="Status", orientation="h",
-                     title="Leads by status (sorted)", color="Status", color_discrete_sequence=px.colors.qualitative.Dark24)
-    fig_bar.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white", height=360,
-                          showlegend=False, margin=dict(l=0, r=0, t=40, b=0))
+    # VERTICAL BAR CHART (changed from horizontal)
+    dist_sorted = counts.sort_values("count", ascending=False)
+    fig_bar = px.bar(
+        dist_sorted, 
+        x="Status",  # Status on x-axis
+        y="count",   # Count on y-axis
+        title="Leads by status",
+        color="Status", 
+        color_discrete_sequence=px.colors.qualitative.Set3,
+        text="count"
+    )
+    fig_bar.update_traces(textposition='outside', textfont_size=12)
+    fig_bar.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)", 
+        paper_bgcolor="rgba(0,0,0,0)", 
+        font_color="white", 
+        height=400,
+        showlegend=False, 
+        margin=dict(l=0, r=0, t=40, b=0),
+        xaxis_title="Status",
+        yaxis_title="Count"
+    )
     st.plotly_chart(fig_bar, use_container_width=True)
 
     if "period" not in leads.columns and "CreatedOn" in leads.columns:
