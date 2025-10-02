@@ -535,8 +535,11 @@ def show_executive_summary(d):
 
     # 1) Define the helper FIRST (fully indented body, no imports here)
     def render_funnel_and_markets(d):
-    EXEC_PRIMARY="#DAA520"; EXEC_BLUE="#1E90FF"; EXEC_GREEN="#32CD32"; EXEC_DANGER="#DC143C"
-    stage_order = ["New","Qualified","Meeting Scheduled","Negotiation","Contract Signed","Lost"]
+    EXEC_PRIMARY = "#DAA520"
+    EXEC_BLUE = "#1E90FF"
+    EXEC_GREEN = "#32CD32"
+    EXEC_DANGER = "#DC143C"
+    stage_order = ["New", "Qualified", "Meeting Scheduled", "Negotiation", "Contract Signed", "Lost"]
 
     leads = norm(d.get("leads"))
     statuses = norm(d.get("lead_statuses"))
@@ -545,27 +548,35 @@ def show_executive_summary(d):
     trx = norm(d.get("transactions"))
     countries = norm(d.get("countries"))
 
-    if leads is None or "leadid" not in leads.columns: st.info("Leads table not available"); return
+    if leads is None or "leadid" not in leads.columns:
+        st.info("Leads table not available")
+        return
 
     # === Helper: status mappings ===
     def ids_from_status_names(names):
-        if statuses is None or not {"leadstatusid","statusname_e"}.issubset(statuses.columns): return set()
+        if statuses is None or not {"leadstatusid", "statusname_e"}.issubset(statuses.columns):
+            return set()
         return set(
-            statuses.loc[statuses["statusname_e"].str.lower().isin([n.lower() for n in names]), "leadstatusid"].dropna().astype(int)
+            statuses.loc[
+                statuses["statusname_e"].str.lower().isin([n.lower() for n in names]), "leadstatusid"
+            ]
+            .dropna()
+            .astype(int)
         )
 
     # === Evidence flags for each conversion stage ===
     cohort = leads.copy()
     cohort.index = cohort["leadid"]
     cohort["hasmeeting"] = False
-    if ama is not None and {"leadid","meetingstatusid","startdatetime"}.issubset(ama.columns):
+    if ama is not None and {"leadid", "meetingstatusid", "startdatetime"}.issubset(ama.columns):
         amavalid = ama.loc[
-            ama["leadid"].isin(cohort["leadid"]) & ama["meetingstatusid"].isin({1,6}) &
-            (pd.to_datetime(ama["startdatetime"], errors="coerce") <= pd.Timestamp.today())
+            ama["leadid"].isin(cohort["leadid"])
+            & ama["meetingstatusid"].isin({1, 6})
+            & (pd.to_datetime(ama["startdatetime"], errors="coerce") <= pd.Timestamp.today())
         ]
         if not amavalid.empty:
             cohort.loc[amavalid["leadid"], "hasmeeting"] = True
-    
+
     # Other flags (negotiation, signed, lost) can be handled analogously
     qualified_ids = ids_from_status_names(["Qualified"])
     won_ids = ids_from_status_names(["Won"])
@@ -576,14 +587,20 @@ def show_executive_summary(d):
     cohort["won"] = cohort["leadstatusid"].isin(won_ids)
     cohort["lost"] = cohort["leadstatusid"].isin(lost_ids)
     cohort["negotiation"] = cohort["leadstatusid"].isin(negotiation_ids)
-    
+
     def stage_resolver(row):
-        if row["won"]: return "Contract Signed"
-        if row["lost"]: return "Lost"
-        if row["negotiation"]: return "Negotiation"
-        if row["hasmeeting"]: return "Meeting Scheduled"
-        if row["qualified"]: return "Qualified"
+        if row["won"]:
+            return "Contract Signed"
+        if row["lost"]:
+            return "Lost"
+        if row["negotiation"]:
+            return "Negotiation"
+        if row["hasmeeting"]:
+            return "Meeting Scheduled"
+        if row["qualified"]:
+            return "Qualified"
         return "New"
+
     cohort["Stage"] = cohort.apply(stage_resolver, axis=1)
     cohort["Stage"] = pd.Categorical(cohort["Stage"], categories=stage_order, ordered=True)
 
@@ -593,12 +610,21 @@ def show_executive_summary(d):
     stage_counts = dict(zip(funnel["Stage"], funnel["Count"]))
     new_total = max(int(stage_counts.get("New", 0)), 1)
 
-    fig = px.funnel(funnel, x="Count", y="Stage", category_orders={"Stage":stage_order},
+    fig = px.funnel(
+        funnel,
+        x="Count",
+        y="Stage",
+        category_orders={"Stage": stage_order},
         color_discrete_sequence=[EXEC_BLUE, EXEC_GREEN, EXEC_PRIMARY, "#FFA500", "#7CFC00", EXEC_DANGER],
-        text="Count"
+        text="Count",
     )
     fig.update_traces(textposition="inside", textfont_color="black", textinfo="value+percent initial")
-    fig.update_layout(height=360, margin=dict(l=0, r=0, t=10, b=10), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+    fig.update_layout(
+        height=360,
+        margin=dict(l=0, r=0, t=10, b=10),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
     st.plotly_chart(fig, use_container_width=True)
 
     # Top markets (using robust merging)
@@ -607,17 +633,21 @@ def show_executive_summary(d):
         L["countryid"] = pd.to_numeric(L["countryid"], errors="coerce")
         bycountry = L.groupby("countryid", dropna=True).size().reset_index(name="Leads")
         bycountry = bycountry.merge(
-            countries[["countryid","countryname_e"]].rename(columns={"countryname_e":"Country"}),
-            on="countryid", how="left"
+            countries[["countryid", "countryname_e"]].rename(columns={"countryname_e": "Country"}),
+            on="countryid",
+            how="left",
         )
         total = float(bycountry["Leads"].sum())
-        bycountry["Share"] = (bycountry["Leads"]/total*100.0).round(1) if total>0 else 0.0
-        top5 = bycountry.sort_values(["Share","Leads"], ascending=False).head(5)
+        bycountry["Share"] = (bycountry["Leads"] / total * 100.0).round(1) if total > 0 else 0.0
+        top5 = bycountry.sort_values(["Share", "Leads"], ascending=False).head(5)
         st.subheader("Top markets")
-        st.dataframe(top5[["Country","Leads","Share"]], use_container_width=True, hide_index=True,
+        st.dataframe(
+            top5[["Country", "Leads", "Share"]],
+            use_container_width=True,
+            hide_index=True,
             column_config={
                 "Share": st.column_config.ProgressColumn("Share", format="%.1f%%", min_value=0.0, max_value=100.0)
-            }
+            },
         )
     else:
         st.info("Country data unavailable to build the market list.")
