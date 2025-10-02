@@ -811,6 +811,8 @@ def _train_propensity(leads, calls, meets, statuses):
             sid = "MeetingStatusId" if "MeetingStatusId" in m.columns else ("meetingstatusid" if "meetingstatusid" in m.columns else None)
             if sid is not None: m = m[m[sid].isin([1,6])]
             m = m.rename(columns={dtc:"When"})
+            if "leadid" in m.columns and "LeadId" not in m.columns:
+                m = m.rename(columns={"leadid": "LeadId"})
             mm = _recent_agg(m, "When", cutoff, 14)
             meet_norm = mm.rename(columns={"n":"meet_n","connected":"meet_connected","mean_dur":"meet_mean_dur","last_days":"meet_last_days"})
 
