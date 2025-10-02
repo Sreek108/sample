@@ -13,7 +13,7 @@ except Exception:
     HAS_OPTION_MENU = False
 
 # Page config and theme
-st.set_page_config(page_title="DAR Global - Executive Dashboard", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="DAR Global - Executive Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
 EXEC_PRIMARY = "#DAA520"
 EXEC_BLUE = "#1E90FF"
@@ -41,6 +41,9 @@ st.markdown(f"""
 div[data-testid="metric-container"] {{
     background: linear-gradient(135deg, {EXEC_SURFACE} 0%, {EXEC_BG} 100%);
     border: 2px solid {EXEC_PRIMARY}; padding: .75rem; border-radius: 10px; color: white;
+}}
+[data-testid="stSidebar"] {{
+    display: none;
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -169,96 +172,12 @@ def load_data(data_dir: str | None = None):
 
     return ds
 
-
-# Sidebar filters
-with st.sidebar:
-    st.markdown("## Filters")
-    grain = st.radio("Time grain", ["Week", "Month", "Year"], index=1, horizontal=True)
-
+# Set default grain and load data
+grain = "Month"
 data = load_data("data")
 
-def filter_by_date(datasets, grain_sel: str):
-    out = dict(datasets)
-    cands = []
-    if out.get("leads") is not None and "CreatedOn" in out["leads"].columns:
-        cands.append(pd.to_datetime(out["leads"]["CreatedOn"], errors="coerce"))
-    if out.get("calls") is not None and "CallDateTime" in out["calls"].columns:
-        cands.append(pd.to_datetime(out["calls"]["CallDateTime"], errors="coerce"))
-    if out.get("schedules") is not None and "ScheduledDate" in out["schedules"].columns:
-        cands.append(pd.to_datetime(out["schedules"]["ScheduledDate"], errors="coerce"))
-
-    if cands:
-        gmin = min([c.min() for c in cands if c is not None]).date()
-        gmax = max([c.max() for c in cands if c is not None]).date()
-    else:
-        gmax = date.today()
-        gmin = gmax - timedelta(days=365)
-
-    with st.sidebar:
-        preset = st.select_slider("Quick range", ["Last 7 days", "Last 30 days", "Last 90 days", "MTD", "YTD", "Custom"], value="Last 30 days")
-        today = date.today()
-        if preset == "Last 7 days":
-            default_start, default_end = max(gmin, today - timedelta(days=6)), today
-        elif preset == "Last 30 days":
-            default_start, default_end = max(gmin, today - timedelta(days=29)), today
-        elif preset == "Last 90 days":
-            default_start, default_end = max(gmin, today - timedelta(days=89)), today
-        elif preset == "MTD":
-            default_start, default_end = max(gmin, today.replace(day=1)), today
-        elif preset == "YTD":
-            default_start, default_end = max(gmin, date(today.year, 1, 1)), today
-        else:
-            default_start, default_end = gmin, gmax
-        step = timedelta(days=1 if grain_sel in ["Week", "Month"] else 7)
-        date_start, date_end = st.slider("Date range", min_value=gmin, max_value=gmax, value=(default_start, default_end), step=step)
-
-    def add_period(dt):
-        if grain_sel == "Week":
-            return dt.dt.to_period("W").apply(lambda p: p.start_time.date())
-        if grain_sel == "Month":
-            return dt.dt.to_period("M").apply(lambda p: p.start_time.date())
-        return dt.dt.to_period("Y").apply(lambda p: p.start_time.date())
-
-    if out.get("leads") is not None and "CreatedOn" in out["leads"].columns:
-        dt = pd.to_datetime(out["leads"]["CreatedOn"], errors="coerce")
-        mask = dt.dt.date.between(date_start, date_end)
-        out["leads"] = out["leads"].loc[mask].copy()
-        out["leads"]["period"] = add_period(dt.loc[mask])
-
-    if out.get("calls") is not None and "CallDateTime" in out["calls"].columns:
-        dt = pd.to_datetime(out["calls"]["CallDateTime"], errors="coerce")
-        mask = dt.dt.date.between(date_start, date_end)
-        out["calls"] = out["calls"].loc[mask].copy()
-        out["calls"]["period"] = add_period(dt.loc[mask])
-
-    if out.get("schedules") is not None and "ScheduledDate" in out["schedules"].columns:
-        dt = pd.to_datetime(out["schedules"]["ScheduledDate"], errors="coerce")
-        mask = dt.dt.date.between(date_start, date_end)
-        out["schedules"] = out["schedules"].loc[mask].copy()
-        out["schedules"]["period"] = add_period(dt.loc[mask])
-
-    if out.get("transactions") is not None and "TransactionDate" in out["transactions"].columns:
-        dt = pd.to_datetime(out["transactions"]["TransactionDate"], errors="coerce")
-        mask = dt.dt.date.between(date_start, date_end)
-        out["transactions"] = out["transactions"].loc[mask].copy()
-        out["transactions"]["period"] = add_period(dt.loc[mask])
-
-    if out.get("agent_meeting_assignment") is not None:
-        ama = out["agent_meeting_assignment"].copy()
-        cols_lower = {c.lower(): c for c in ama.columns}
-        if "startdatetime" in cols_lower:
-            dtcol = cols_lower["startdatetime"]
-            dt = pd.to_datetime(ama[dtcol], errors="coerce")
-            mask = dt.dt.date.between(date_start, date_end)
-            out["agent_meeting_assignment"] = ama.loc[mask].copy()
-
-    return out
-
-fdata = filter_by_date(data, grain)
-
-# CORRECTED PROGRESSIVE FUNNEL
+# CORRECTED PROGRESSIVE FUNNEL (New at top, Lost at bottom, count only)
 def render_funnel_and_markets(d):
-    # Define the funnel stages in REVERSE order (New at top, Lost at bottom)
     stage_order = ["Lost", "Won", "Negotiation", "Meeting Scheduled", "Interested", "New"]
 
     leads = norm(d.get("leads"))
@@ -309,7 +228,6 @@ def render_funnel_and_markets(d):
     lost_leads = leads[leads["leadstatusid"].isin(lost_ids)]
     lost_count = len(lost_leads)
 
-    # Build funnel data in REVERSE order (Lost first, New last)
     funnel_data = [
         {"Stage": "Lost", "Count": lost_count if lost_count > 0 else 1},
         {"Stage": "Won", "Count": won_count if won_count > 0 else 1},
@@ -329,12 +247,11 @@ def render_funnel_and_markets(d):
         color_discrete_sequence=[EXEC_DANGER, "#7CFC00", "#FFA500", EXEC_PRIMARY, EXEC_GREEN, EXEC_BLUE]
     )
     
-    # Show ONLY count - no percentage, no duplicates
     fig.update_traces(
         textposition="inside", 
         textfont_color="white",
         textfont_size=16,
-        textinfo="value"  # This shows ONLY the count value
+        textinfo="value"
     )
     
     fig.update_layout(
@@ -372,9 +289,9 @@ def render_funnel_and_markets(d):
         )
     else:
         st.info("Country data unavailable to build Top markets.")
-# Executive Summary
+
+# Executive Summary with Date Slicer
 def show_executive_summary(d):
-    # Get ALL leads (not filtered) for proper KPI calculation
     all_leads = data.get("leads")
     lead_statuses = d.get("lead_statuses")
     
@@ -390,36 +307,57 @@ def show_executive_summary(d):
 
     st.subheader("Performance KPIs")
     
-    # Calculate time periods from today
+    # DATE RANGE SLICER
+    col_date1, col_date2, col_date3 = st.columns([1, 1, 2])
+    
+    if "CreatedOn" in all_leads.columns:
+        all_dates = pd.to_datetime(all_leads["CreatedOn"], errors="coerce").dropna()
+        min_date = all_dates.min().date() if len(all_dates) > 0 else date.today() - timedelta(days=365)
+        max_date = all_dates.max().date() if len(all_dates) > 0 else date.today()
+    else:
+        min_date = date.today() - timedelta(days=365)
+        max_date = date.today()
+    
+    with col_date1:
+        date_from = st.date_input("From Date", value=min_date, min_value=min_date, max_value=max_date, key="date_from")
+    
+    with col_date2:
+        date_to = st.date_input("To Date", value=max_date, min_value=min_date, max_value=max_date, key="date_to")
+    
+    with col_date3:
+        st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
+        if st.button("Apply Date Range", type="primary"):
+            st.rerun()
+    
+    st.markdown("---")
+    
+    # Filter leads by date range
+    filtered_leads = all_leads.loc[
+        (pd.to_datetime(all_leads["CreatedOn"], errors="coerce").dt.date >= date_from) &
+        (pd.to_datetime(all_leads["CreatedOn"], errors="coerce").dt.date <= date_to)
+    ] if "CreatedOn" in all_leads.columns else all_leads.copy()
+    
     today = pd.Timestamp.today().normalize()
-    week_start = today - pd.Timedelta(days=today.weekday())  # Monday of current week
-    month_start = today.replace(day=1)  # First day of current month
-    year_start = today.replace(month=1, day=1)  # First day of current year
+    week_start = today - pd.Timedelta(days=today.weekday())
+    month_start = today.replace(day=1)
+    year_start = today.replace(month=1, day=1)
 
-    # Create 4 columns for Week, Month, Year, and All Time
     cols = st.columns(4)
     all_meetings = data.get("agent_meeting_assignment")
 
-    # Define periods
     periods = [
         ("Week to Date", week_start, today),
         ("Month to Date", month_start, today),
         ("Year to Date", year_start, today),
-        ("All Time", None, None)
+        ("Selected Range", pd.Timestamp(date_from), pd.Timestamp(date_to))
     ]
 
     for (label, start, end), col in zip(periods, cols):
-        # Filter leads by period
-        if start is not None and end is not None:
-            leads_period = all_leads.loc[
-                (pd.to_datetime(all_leads["CreatedOn"], errors="coerce") >= pd.Timestamp(start)) &
-                (pd.to_datetime(all_leads["CreatedOn"], errors="coerce") <= pd.Timestamp(end))
-            ] if "CreatedOn" in all_leads.columns else pd.DataFrame()
-        else:
-            # All time - use all leads
-            leads_period = all_leads.copy()
+        leads_period = filtered_leads.loc[
+            (pd.to_datetime(filtered_leads["CreatedOn"], errors="coerce") >= start) &
+            (pd.to_datetime(filtered_leads["CreatedOn"], errors="coerce") <= end)
+        ] if "CreatedOn" in filtered_leads.columns else pd.DataFrame()
         
-        # Filter meetings by period
         if all_meetings is not None and len(all_meetings) > 0:
             m = all_meetings.copy()
             m.columns = m.columns.str.lower()
@@ -427,19 +365,16 @@ def show_executive_summary(d):
             
             if date_col is not None:
                 m["dt"] = pd.to_datetime(m[date_col], errors="coerce")
-                
-                if start is not None and end is not None:
-                    m = m[(m["dt"] >= pd.Timestamp(start)) & (m["dt"] <= pd.Timestamp(end))]
+                m = m[(m["dt"] >= start) & (m["dt"] <= end)]
                 
                 if "meetingstatusid" in m.columns:
-                    m = m[m["meetingstatusid"].isin({1, 6})]  # Scheduled or Rescheduled
+                    m = m[m["meetingstatusid"].isin({1, 6})]
                 meetings_period = m
             else:
                 meetings_period = pd.DataFrame()
         else:
             meetings_period = pd.DataFrame()
         
-        # Calculate metrics
         total_leads_p = int(len(leads_period))
         won_leads_p = int((leads_period["LeadStatusId"] == won_status_id).sum()) if "LeadStatusId" in leads_period.columns and len(leads_period) > 0 else 0
         conv_rate_p = (won_leads_p / total_leads_p * 100.0) if total_leads_p > 0 else 0.0
@@ -454,8 +389,8 @@ def show_executive_summary(d):
             st.markdown("**Meetings Scheduled**")
             st.markdown(f"<span style='font-size:2rem;'>{meetings_scheduled:,}</span>", unsafe_allow_html=True)
 
-    # Trend at a glance (use filtered data from sidebar)
-    leads = d.get("leads")
+    # Trend at a glance
+    leads = filtered_leads.copy()
     st.markdown("---")
     st.subheader("Trend at a glance")
     trend_style = st.radio("Trend style", ["Line", "Bars", "Bullet"], index=0, horizontal=True, key="__trend_style_exec")
@@ -613,7 +548,10 @@ def show_executive_summary(d):
 
     st.markdown("---")
     st.subheader("Lead conversion snapshot")
-    render_funnel_and_markets(d)
+    
+    d_filtered = dict(d)
+    d_filtered["leads"] = filtered_leads
+    render_funnel_and_markets(d_filtered)
 
 # Lead Status
 def show_lead_status(d):
@@ -732,6 +670,11 @@ def show_lead_status(d):
             "Pipeline": st.column_config.NumberColumn("Pipeline", format="%.0f"),
         }
     )
+
+# Create a simple filtered dataset for navigation
+fdata = {"leads": data.get("leads"), "lead_statuses": data.get("lead_statuses"), 
+         "agent_meeting_assignment": data.get("agent_meeting_assignment"),
+         "countries": data.get("countries"), "calls": data.get("calls")}
 
 # Navigation
 NAV = [
