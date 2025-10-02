@@ -683,12 +683,13 @@ def show_executive_summary(d):
         )
 
         # aggregate and plot
-        funnel = (
-            cohort.groupby("Stage").size()
-            .reindex(cohort["Stage"].cat.categories, fill_value=0)
-            .reset_index(name="Count")
-        )
-        new_total = max(int(funnel.loc[funnel["Stage"].eq("New"), "Count"].iloc[0]), 1)
+        stage_order = ["New","Qualified","Meeting Scheduled","Negotiation","Contract Signed","Lost"]
+        funnel = cohort.groupby("Stage").size().reindex(stage_order, fill_value=0).reset_index(name="Count")
+        funnel.columns = ["Stage", "Count"]  # Forces correct column names!
+        
+        # Make extraction always safe (even if 'New' missing)
+        stage_counts = dict(zip(funnel["Stage"], funnel["Count"]))
+        new_total = max(int(stage_counts.get("New", 0)), 1)
         funnel["Label"] = (funnel["Count"] / new_total * 100).round(1).astype(str) + "%"
 
         fig = px.funnel(
