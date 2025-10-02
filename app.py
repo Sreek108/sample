@@ -693,12 +693,15 @@ def show_executive_summary(d):
         funnel["Label"] = (funnel["Count"] / new_total * 100).round(1).astype(str) + "%"
 
         fig = px.funnel(
-            funnel, x="Count", y="Stage", text="Label", color="Stage",
-            color_discrete_sequence=["#4A90E2","#50E3C2","#2D9CDB","#FFA500","#7CFC00","#E74C3C"]
+            funnel,
+            x="Count",
+            y="Stage",
+            category_orders={"Stage": stage_order},
+            color_discrete_sequence=["#4A90E2", "#50E3C2", "#2D9CDB", "#FFA500", "#7CFC00", "#E74C3C"],
+            text="Count"
         )
-        fig.update_traces(textposition="inside", textfont_color="black")
-        fig.update_layout(height=360, margin=dict(l=0, r=0, t=10, b=10),
-                          plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+        fig.update_traces(textposition="inside", textfont_color="black", textinfo="value+percent initial")
+        fig.update_layout(height=360, margin=dict(l=0, r=0, t=10, b=10), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig, use_container_width=True)
 
         # Top markets
