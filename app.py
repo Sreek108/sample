@@ -321,20 +321,17 @@ def render_funnel_and_markets(d):
     lost_count = len(lost_leads)
 
     # Build progressive funnel data
+    # For visualization: if count is 0, show a minimum for visibility (or actual 0 if you prefer)
     funnel_data = [
         {"Stage": "New", "Count": total_leads},
-        {"Stage": "Interested", "Count": max(interested_count, 1)},  # Ensure at least 1
-        {"Stage": "Meeting Scheduled", "Count": max(meeting_count, 1)},  # Ensure at least 1
-        {"Stage": "Negotiation", "Count": max(negotiation_count, 1)},  # Ensure at least 1
-        {"Stage": "Won", "Count": max(won_count, 1)},  # Ensure at least 1
-        {"Stage": "Lost", "Count": max(lost_count, 1)}  # Ensure at least 1
+        {"Stage": "Interested", "Count": interested_count if interested_count > 0 else 1},
+        {"Stage": "Meeting Scheduled", "Count": meeting_count if meeting_count > 0 else 1},
+        {"Stage": "Negotiation", "Count": negotiation_count if negotiation_count > 0 else 1},
+        {"Stage": "Won", "Count": won_count if won_count > 0 else 1},
+        {"Stage": "Lost", "Count": lost_count if lost_count > 0 else 1}
     ]
     
     funnel_df = pd.DataFrame(funnel_data)
-
-    # Debug info (optional - remove in production)
-    st.caption(f"Debug: Interested IDs: {interested_ids}, Negotiation IDs: {negotiation_ids}, Won IDs: {won_ids}, Lost IDs: {lost_ids}")
-    st.caption(f"Counts: New={total_leads}, Int={interested_count}, Meet={meeting_count}, Neg={negotiation_count}, Won={won_count}, Lost={lost_count}")
 
     # Create the funnel chart
     fig = px.funnel(
@@ -345,9 +342,18 @@ def render_funnel_and_markets(d):
         color_discrete_sequence=[EXEC_BLUE, EXEC_GREEN, EXEC_PRIMARY, "#FFA500", "#7CFC00", EXEC_DANGER],
         text="Count",
     )
-    fig.update_traces(textposition="inside", textfont_color="white", textinfo="value+percent initial")
+    
+    # Customize the text to show actual counts (including 0)
+    actual_counts = [total_leads, interested_count, meeting_count, negotiation_count, won_count, lost_count]
+    fig.update_traces(
+        textposition="inside", 
+        textfont_color="white", 
+        texttemplate="%{text}<br>%{percentInitial}",
+        text=actual_counts
+    )
+    
     fig.update_layout(
-        height=400,
+        height=450,
         margin=dict(l=0, r=0, t=10, b=10),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)"
