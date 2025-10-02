@@ -518,28 +518,22 @@ def show_executive_summary(d):
 
     leads = norm(d.get("leads"))
     statuses = norm(d.get("lead_statuses"))
-    stages = norm(d.get("lead_stages"))
     ama = norm(d.get("agent_meeting_assignment"))
-    trx = norm(d.get("transactions"))
     countries = norm(d.get("countries"))
 
     if leads is None or "leadid" not in leads.columns:
-        st.info("Leads table not available")
+        st.info("Leads data unavailable.")
         return
 
-    # === Helper: status mappings ===
     def ids_from_status_names(names):
         if statuses is None or not {"leadstatusid", "statusname_e"}.issubset(statuses.columns):
             return set()
         return set(
-            statuses.loc[
-                statuses["statusname_e"].str.lower().isin([n.lower() for n in names]), "leadstatusid"
-            ]
+            statuses.loc[statuses["statusname_e"].str.lower().isin([n.lower() for n in names]), "leadstatusid"]
             .dropna()
             .astype(int)
         )
 
-    # === Evidence flags for each conversion stage ===
     cohort = leads.copy()
     cohort.index = cohort["leadid"]
     cohort["hasmeeting"] = False
@@ -547,12 +541,11 @@ def show_executive_summary(d):
         amavalid = ama.loc[
             ama["leadid"].isin(cohort["leadid"])
             & ama["meetingstatusid"].isin({1, 6})
-            & (pd.to_datetime(ama["startdatetime"], errors="coerce") <= pd.Timestamp.today())
+            & (pd.to_datetime(ama["startdatetime"], errors="coerce") <= pd.Timestamp.now())
         ]
         if not amavalid.empty:
             cohort.loc[amavalid["leadid"], "hasmeeting"] = True
 
-    # Other flags (negotiation, signed, lost) can be handled analogously
     qualified_ids = ids_from_status_names(["Qualified"])
     won_ids = ids_from_status_names(["Won"])
     lost_ids = ids_from_status_names(["Lost"])
@@ -579,7 +572,6 @@ def show_executive_summary(d):
     cohort["Stage"] = cohort.apply(stage_resolver, axis=1)
     cohort["Stage"] = pd.Categorical(cohort["Stage"], categories=stage_order, ordered=True)
 
-    # Always build funnel this way: order fixed, counts guaranteed
     funnel = cohort.groupby("Stage").size().reindex(stage_order, fill_value=0).reset_index(name="Count")
     funnel.columns = ["Stage", "Count"]
     stage_counts = dict(zip(funnel["Stage"], funnel["Count"]))
@@ -598,19 +590,20 @@ def show_executive_summary(d):
         height=360,
         margin=dict(l=0, r=0, t=10, b=10),
         plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)"
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Top markets (using robust merging)
     if countries is not None and "countryid" in leads.columns and "countryname_e" in countries.columns:
-        L = leads.copy()
-        L["countryid"] = pd.to_numeric(L["countryid"], errors="coerce")
-        bycountry = L.groupby("countryid", dropna=True).size().reset_index(name="Leads")
-        bycountry = bycountry.merge(
-            countries[["countryid", "countryname_e"]].rename(columns={"countryname_e": "Country"}),
-            on="countryid",
-            how="left",
+        bycountry = (
+            leads.groupby("countryid", dropna=True)
+            .size()
+            .reset_index(name="Leads")
+            .merge(
+                countries[["countryid", "countryname_e"]].rename(columns={"countryname_e": "Country"}),
+                on="countryid",
+                how="left",
+            )
         )
         total = float(bycountry["Leads"].sum())
         bycountry["Share"] = (bycountry["Leads"] / total * 100.0).round(1) if total > 0 else 0.0
@@ -621,182 +614,16 @@ def show_executive_summary(d):
             use_container_width=True,
             hide_index=True,
             column_config={
-                "Share": st.column_config.ProgressColumn("Share", format="%.1f%%", min_value=0.0, max_value=100.0)
+                "Share": st.column_config.ProgressColumn(
+                    "Share", format="%.1f%%", min_value=0, max_value=100
+                )
             },
         )
     else:
-        st.info("Country data unavailable to build the market list.")
+        st.info("Country data unavailable to build Top markets.")
+
     # 2) Now call the helper AFTER it is defined
     render_funnel_and_markets(d)
-
-# -----------------------------------------------------------------------------
-# AI Insights page (Propensity + Expected Value + Actions + Forecast + Best Contact Time)
-# -----------------------------------------------------------------------------
-def _recent_agg(df, when_col, cutoff, days=14):
-    if df is None or len(df)==0 or when_col not in df: 
-        return pd.DataFrame({"LeadId":[], "n":[], "connected":[], "mean_dur":[], "last_days":[]})
-    x = df.copy()
-    x[when_col] = pd.to_datetime(x[when_col], errors="coerce")
-    window = cutoff - pd.Timedelta(days=days)
-    x = x[(x[when_col]>=window) & (x[when_col]<=cutoff)]
-    g = x.groupby("LeadId").agg(
-        n=("LeadId","count"),
-        connected=("CallStatusId", lambda s: (s==1).mean() if "CallStatusId" in x.columns else 0.0),
-        mean_dur=("DurationSeconds", "mean") if "DurationSeconds" in x.columns else ("LeadId","count")  
-    ).reset_index()
-    last = x.groupby("LeadId")[when_col].max().reset_index().rename(columns={when_col:"last_dt"})
-    g = g.merge(last, on="LeadId", how="left")
-    g["last_days"] = (cutoff - g["last_dt"]).dt.days.fillna(999)
-    return g.drop(columns=["last_dt"], errors="ignore")
-
-def _weekly_meeting_series(meets):
-    if meets is None or len(meets)==0: 
-        return pd.DataFrame({"week":[], "meetings":[]})
-    m = meets.copy()
-    dt_col = "StartDateTime" if "StartDateTime" in m.columns else ("startdatetime" if "startdatetime" in m.columns else None)
-    if dt_col is None: return pd.DataFrame({"week":[], "meetings":[]})
-    m["dt"] = pd.to_datetime(m[dt_col], errors="coerce")
-    sid = "MeetingStatusId" if "MeetingStatusId" in m.columns else ("meetingstatusid" if "meetingstatusid" in m.columns else None)
-    if sid is not None: m = m[m[sid].isin([1,6])]
-    return m.groupby(pd.Grouper(key="dt", freq="W-MON")).size().reset_index(name="meetings").rename(columns={"dt":"week"})
-
-def _weekly_wins_series(leads):
-    if leads is None or len(leads)==0: 
-        return pd.DataFrame({"week":[], "wins":[]})
-    l = leads.copy()
-    l["dt"] = pd.to_datetime(l["CreatedOn"], errors="coerce")
-    l = l[l.get("LeadStatusId", pd.Series(dtype="Int64")).astype("Int64")==9]
-    return l.groupby(pd.Grouper(key="dt", freq="W-MON")).size().reset_index(name="wins").rename(columns={"dt":"week"})
-
-def _sma_forecast(vals, k=4):
-    if len(vals)==0: return [0.0]*k
-    s = pd.Series(vals)
-    last = s.rolling(min_periods=1, window=min(4,len(s))).mean().iloc[-1]
-    return [float(last)]*k
-
-@st.cache_resource(show_spinner=False)
-def _train_propensity(leads, calls, meets, statuses):
-    won_id = 9
-    if statuses is not None and "statusname_e" in statuses.columns:
-        m = statuses.loc[statuses["statusname_e"].str.lower()=="won"]
-        if not m.empty and "leadstatusid" in m.columns: won_id = int(m.iloc[0]["leadstatusid"])
-
-    df = leads.copy()
-    df["CreatedOn"] = pd.to_datetime(df.get("CreatedOn"), errors="coerce")
-    df["label"] = (df.get("LeadStatusId", pd.Series(index=df.index).astype("Int64")).astype("Int64")==won_id).astype(int)
-    cutoff = df["CreatedOn"].max() if "CreatedOn" in df.columns else pd.Timestamp.today()
-
-    calls_14 = _recent_agg(calls, "CallDateTime", cutoff, 14)
-    meet_norm = pd.DataFrame({"LeadId":[], "meet_n":[], "meet_connected":[], "meet_mean_dur":[], "meet_last_days":[]})
-    if meets is not None and len(meets):
-        m = meets.copy()
-        dtc = "StartDateTime" if "StartDateTime" in m.columns else ("startdatetime" if "startdatetime" in m.columns else None)
-        if dtc is not None:
-            m[dtc] = pd.to_datetime(m[dtc], errors="coerce")
-            sid = "MeetingStatusId" if "MeetingStatusId" in m.columns else ("meetingstatusid" if "meetingstatusid" in m.columns else None)
-            if sid is not None: m = m[m[sid].isin([1,6])]
-            m = m.rename(columns={dtc:"When"})
-            if "leadid" in m.columns and "LeadId" not in m.columns:
-                m = m.rename(columns={"leadid": "LeadId"})
-            mm = _recent_agg(m, "When", cutoff, 14)
-            meet_norm = mm.rename(columns={"n":"meet_n","connected":"meet_connected","mean_dur":"meet_mean_dur","last_days":"meet_last_days"})
-
-    X = df[["LeadId","LeadStageId","LeadStatusId","AssignedAgentId","EstimatedBudget"]].fillna(0).copy()
-    X["age_days"] = (cutoff - df["CreatedOn"]).dt.days.fillna(0)
-    X = X.merge(calls_14, on="LeadId", how="left").merge(meet_norm, on="LeadId", how="left").fillna(0)
-    y = df["label"].values
-
-    if SKLEARN_OK and len(df)>=20 and y.sum()>=1:
-        X_fit = X.drop(columns=["LeadId"])
-        try:
-            X_tr, X_te, y_tr, y_te = train_test_split(X_fit, y, test_size=0.25, random_state=42, stratify=y if y.sum()>0 else None)
-            base = GradientBoostingClassifier(random_state=42)
-            model = CalibratedClassifierCV(base, cv=3)
-            model.fit(X_tr, y_tr)
-            auc = roc_auc_score(y_te, model.predict_proba(X_te)[:,1]) if len(np.unique(y_te))>1 else np.nan
-            prob_all = model.predict_proba(X_fit)[:,1]
-            return prob_all, auc, X
-        except Exception:
-            pass
-
-    # Heuristic fallback
-    prob_all = (
-        0.15
-        + 0.25*(X["LeadStatusId"].astype(int).isin([6,7,8]).astype(float))
-        + 0.25*(X["meet_n"].clip(0,3)/3.0)
-        + 0.20*(X["connected"].clip(0,1))
-        + 0.15*(1.0/(1.0+X["age_days"]/30.0))
-    ).clip(0,1).values
-    return prob_all, np.nan, X
-
-def show_ai_insights(d):
-    st.subheader("Lead win propensity, expected value, and next‑best‑actions")
-    leads = d.get("leads"); calls = d.get("calls"); meets = d.get("agent_meeting_assignment"); statuses=d.get("lead_statuses")
-    if leads is None or len(leads)==0:
-        st.info("No data available to train insights."); return
-
-    win_prob, auc, X = _train_propensity(leads, calls, meets, statuses)
-    if not np.isnan(auc):
-        st.metric("Validation AUC", f"{auc:.3f}")
-    else:
-        st.info("Using heuristic scoring (ML not available or insufficient data).")
-
-    scored = leads[["LeadId","LeadStatusId","EstimatedBudget"]].copy()
-    scored["win_prob"] = win_prob
-    scored["expected_value"] = (scored["win_prob"] * scored["EstimatedBudget"]).round(2)
-
-    tmp = X.merge(scored, on="LeadId", how="left")
-    def nba(r):
-        if r["win_prob"]>=0.60 and r.get("meet_n",0)==0: return "Book meeting within 72h"
-        if 0.30<=r["win_prob"]<0.60 and r.get("connected",0)<0.30: return "Nurture call + brochure"
-        if r["win_prob"]<0.30 and r.get("n",0)>=2: return "Switch to AI Agent sequence"
-        return "Maintain cadence"
-    scored["next_action"] = [nba(r) for _,r in tmp.iterrows()]
-
-    st.dataframe(
-        scored.sort_values(["expected_value","win_prob"], ascending=False)
-              .loc[:,["LeadId","LeadStatusId","win_prob","expected_value","next_action"]],
-        use_container_width=True, hide_index=True
-    )
-
-    # Forecasts
-    st.markdown("---"); st.subheader("4‑week outlook")
-    wm = _weekly_meeting_series(meets)
-    ww = _weekly_wins_series(leads)
-    f_meet = _sma_forecast(wm["meetings"] if len(wm) else [], 4)
-    f_wins = _sma_forecast(ww["wins"] if len(ww) else [], 4)
-    c1,c2 = st.columns(2)
-    with c1: st.metric("Forecast avg meetings / week (next 4)", f"{np.mean(f_meet):.1f}")
-    with c2: st.metric("Forecast avg wins / week (next 4)", f"{np.mean(f_wins):.1f}")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        fig = px.line(wm, x="week", y="meetings", markers=True, title="Weekly meetings")
-        fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white", height=260)
-        st.plotly_chart(fig, use_container_width=True)
-    with col2:
-        fig = px.line(ww, x="week", y="wins", markers=True, title="Weekly wins")
-        fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white", height=260)
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Best contact time recommender (by connects)
-    st.markdown("---"); st.subheader("Best contact time windows (connect‑rate)")
-    calls_df = d.get("calls")
-    if calls_df is None or len(calls_df)==0 or "CallDateTime" not in calls_df.columns:
-        st.info("Not enough call data to compute contact windows.")
-    else:
-        c = calls_df.copy()
-        c["dt"] = pd.to_datetime(c["CallDateTime"], errors="coerce")
-        c["dow"] = c["dt"].dt.day_name()
-        c["hour"] = c["dt"].dt.hour
-        if "CallStatusId" in c.columns:
-            grp = c.groupby(["dow","hour"]).agg(total=("LeadCallId","count"),
-                                               connects=("CallStatusId", lambda s:(s==1).sum())).reset_index()
-            grp["connect_rate"] = (grp["connects"]/grp["total"]).round(3)
-            grp = grp.sort_values(["connect_rate","total"], ascending=[False,False]).head(10)
-            st.dataframe(grp, use_container_width=True, hide_index=True)
-        else:
-            st.info("CallStatusId not present in call records.")
 
 # -----------------------------------------------------------------------------
 # Lead Status page
