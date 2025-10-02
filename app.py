@@ -597,10 +597,11 @@ def show_executive_summary(d):
             st.plotly_chart(tile_bullet(conv_ts, "Conversion index", EXEC_GREEN), use_container_width=True)
         with s3:
             st.plotly_chart(tile_bullet(meet_ts, "Meetings index", EXEC_PRIMARY), use_container_width=True)
-    
-        st.markdown("---")
-        st.subheader("Lead conversion snapshot")
-        render_funnel_and_markets(d)
+
+    # Lead conversion snapshot - FIXED INDENTATION
+    st.markdown("---")
+    st.subheader("Lead conversion snapshot")
+    render_funnel_and_markets(d)
 
 # Lead Status
 def show_lead_status(d):
