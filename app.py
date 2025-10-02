@@ -169,15 +169,6 @@ def load_data(data_dir: str | None = None):
 
     return ds
 
-# Header
-st.markdown(f"""
-<div class="main-header">
-  <h1>🏗️ DAR Global — Executive Dashboard</h1>
-  <h3>AI‑Powered Analytics</h3>
-  <p style="margin: 6px 0 0 0; color: {EXEC_GREEN};">Last Updated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</p>
-</div>
-""", unsafe_allow_html=True)
-
 # Sidebar filters
 with st.sidebar:
     st.markdown("## Filters")
@@ -293,47 +284,57 @@ def render_funnel_and_markets(d):
     won_ids = ids_from_status_names(["Won", "Closed Won", "Contract Signed"])
     lost_ids = ids_from_status_names(["Lost", "Closed Lost", "Dead", "Not Interested"])
 
-    # Total leads (New)
+    # Total leads (New) - Starting point
     total_leads = len(leads)
     
-    # Interested leads (includes those who progressed further)
-    interested_count = len(leads[leads["leadstatusid"].isin(interested_ids | negotiation_ids | won_ids)])
+    # Interested leads (those who are interested OR progressed beyond)
+    interested_leads = leads[leads["leadstatusid"].isin(interested_ids | negotiation_ids | won_ids)]
+    interested_count = len(interested_leads)
     
-    # Meeting Scheduled (from interested leads who have meetings)
-    meeting_count = 0
+    # Meeting Scheduled (leads who have scheduled/rescheduled meetings)
+    meeting_lead_ids = set()
     if ama is not None and {"leadid", "meetingstatusid", "startdatetime"}.issubset(ama.columns):
-        meeting_lead_ids = ama.loc[
-            ama["meetingstatusid"].isin({1, 6}) &
-            (pd.to_datetime(ama["startdatetime"], errors="coerce") <= pd.Timestamp.now()),
-            "leadid"
-        ].dropna().astype(int).unique()
-        
-        # Count leads that are interested AND have meetings
-        meeting_count = len(leads[
-            leads["leadid"].isin(meeting_lead_ids) & 
-            leads["leadstatusid"].isin(interested_ids | negotiation_ids | won_ids)
-        ])
+        meeting_lead_ids = set(
+            ama.loc[
+                ama["meetingstatusid"].isin({1, 6}),  # Scheduled or Rescheduled
+                "leadid"
+            ].dropna().astype(int).unique()
+        )
     
-    # Negotiation (from meeting scheduled leads)
-    negotiation_count = len(leads[leads["leadstatusid"].isin(negotiation_ids | won_ids)])
+    # Count interested leads who have meetings OR already in negotiation/won
+    meeting_scheduled_leads = leads[
+        (leads["leadid"].isin(meeting_lead_ids)) | 
+        (leads["leadstatusid"].isin(negotiation_ids | won_ids))
+    ]
+    meeting_count = len(meeting_scheduled_leads)
     
-    # Won (from negotiation)
-    won_count = len(leads[leads["leadstatusid"].isin(won_ids)])
+    # Negotiation (leads currently in negotiation OR already won)
+    negotiation_leads = leads[leads["leadstatusid"].isin(negotiation_ids | won_ids)]
+    negotiation_count = len(negotiation_leads)
     
-    # Lost (leads that reached lost status)
-    lost_count = len(leads[leads["leadstatusid"].isin(lost_ids)])
+    # Won (leads that successfully closed)
+    won_leads = leads[leads["leadstatusid"].isin(won_ids)]
+    won_count = len(won_leads)
+    
+    # Lost (leads that were lost)
+    lost_leads = leads[leads["leadstatusid"].isin(lost_ids)]
+    lost_count = len(lost_leads)
 
     # Build progressive funnel data
     funnel_data = [
         {"Stage": "New", "Count": total_leads},
-        {"Stage": "Interested", "Count": interested_count},
-        {"Stage": "Meeting Scheduled", "Count": meeting_count},
-        {"Stage": "Negotiation", "Count": negotiation_count},
-        {"Stage": "Won", "Count": won_count},
-        {"Stage": "Lost", "Count": lost_count}
+        {"Stage": "Interested", "Count": max(interested_count, 1)},  # Ensure at least 1
+        {"Stage": "Meeting Scheduled", "Count": max(meeting_count, 1)},  # Ensure at least 1
+        {"Stage": "Negotiation", "Count": max(negotiation_count, 1)},  # Ensure at least 1
+        {"Stage": "Won", "Count": max(won_count, 1)},  # Ensure at least 1
+        {"Stage": "Lost", "Count": max(lost_count, 1)}  # Ensure at least 1
     ]
     
     funnel_df = pd.DataFrame(funnel_data)
+
+    # Debug info (optional - remove in production)
+    st.caption(f"Debug: Interested IDs: {interested_ids}, Negotiation IDs: {negotiation_ids}, Won IDs: {won_ids}, Lost IDs: {lost_ids}")
+    st.caption(f"Counts: New={total_leads}, Int={interested_count}, Meet={meeting_count}, Neg={negotiation_count}, Won={won_count}, Lost={lost_count}")
 
     # Create the funnel chart
     fig = px.funnel(
