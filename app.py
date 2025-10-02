@@ -266,7 +266,8 @@ fdata = filter_by_date(data, grain)
 
 # CORRECTED PROGRESSIVE FUNNEL
 def render_funnel_and_markets(d):
-    stage_order = ["New", "Interested", "Meeting Scheduled", "Negotiation", "Won", "Lost"]
+    # Define the funnel stages in REVERSE order (New at top, Lost at bottom)
+    stage_order = ["Lost", "Won", "Negotiation", "Meeting Scheduled", "Interested", "New"]
 
     leads = norm(d.get("leads"))
     statuses = norm(d.get("lead_statuses"))
@@ -316,13 +317,14 @@ def render_funnel_and_markets(d):
     lost_leads = leads[leads["leadstatusid"].isin(lost_ids)]
     lost_count = len(lost_leads)
 
+    # Build funnel data in REVERSE order (Lost first, New last)
     funnel_data = [
-        {"Stage": "New", "Count": total_leads},
-        {"Stage": "Interested", "Count": interested_count if interested_count > 0 else 1},
-        {"Stage": "Meeting Scheduled", "Count": meeting_count if meeting_count > 0 else 1},
-        {"Stage": "Negotiation", "Count": negotiation_count if negotiation_count > 0 else 1},
+        {"Stage": "Lost", "Count": lost_count if lost_count > 0 else 1},
         {"Stage": "Won", "Count": won_count if won_count > 0 else 1},
-        {"Stage": "Lost", "Count": lost_count if lost_count > 0 else 1}
+        {"Stage": "Negotiation", "Count": negotiation_count if negotiation_count > 0 else 1},
+        {"Stage": "Meeting Scheduled", "Count": meeting_count if meeting_count > 0 else 1},
+        {"Stage": "Interested", "Count": interested_count if interested_count > 0 else 1},
+        {"Stage": "New", "Count": total_leads}
     ]
     
     funnel_df = pd.DataFrame(funnel_data)
@@ -332,11 +334,12 @@ def render_funnel_and_markets(d):
         x="Count",
         y="Stage",
         category_orders={"Stage": stage_order},
-        color_discrete_sequence=[EXEC_BLUE, EXEC_GREEN, EXEC_PRIMARY, "#FFA500", "#7CFC00", EXEC_DANGER],
+        color_discrete_sequence=[EXEC_DANGER, "#7CFC00", "#FFA500", EXEC_PRIMARY, EXEC_GREEN, EXEC_BLUE],
         text="Count",
     )
     
-    actual_counts = [total_leads, interested_count, meeting_count, negotiation_count, won_count, lost_count]
+    # Actual counts in reverse order
+    actual_counts = [lost_count, won_count, negotiation_count, meeting_count, interested_count, total_leads]
     fig.update_traces(
         textposition="inside", 
         textfont_color="white", 
