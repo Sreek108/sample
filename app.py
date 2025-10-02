@@ -554,7 +554,7 @@ def show_executive_summary(d):
     d_filtered["leads"] = filtered_leads
     render_funnel_and_markets(d_filtered)
 
-# Lead Status with VERTICAL bar chart
+# Lead Status with VERTICAL bar chart (removed status mix by period)
 def show_lead_status(d):
     leads = d.get("leads")
     statuses = d.get("lead_statuses")
@@ -595,12 +595,12 @@ def show_lead_status(d):
     st.markdown("---")
     st.subheader("Lead Distribution Status")
 
-    # VERTICAL BAR CHART (changed from horizontal)
+    # VERTICAL BAR CHART
     dist_sorted = counts.sort_values("count", ascending=False)
     fig_bar = px.bar(
         dist_sorted, 
-        x="Status",  # Status on x-axis
-        y="count",   # Count on y-axis
+        x="Status",
+        y="count",
         title="Leads by status",
         color="Status", 
         color_discrete_sequence=px.colors.qualitative.Set3,
@@ -619,23 +619,8 @@ def show_lead_status(d):
     )
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    if "period" not in leads.columns and "CreatedOn" in leads.columns:
-        leads["period"] = leads["CreatedOn"].dt.to_period("M").apply(lambda p: p.start_time.date())
-    if "period" in leads.columns:
-        normalize = st.checkbox("Normalize to 100% per period", value=False, key="ls_norm")
-        trend = leads.groupby(["period", "Status"]).size().reset_index(name="count")
-        if normalize:
-            totals = trend.groupby("period")["count"].transform("sum").replace(0, np.nan)
-            trend["count"] = (trend["count"] / totals * 100).round(1)
-            y_title = "Share %"
-        else:
-            y_title = "Count"
-        fig_stack = px.bar(trend.sort_values("period"), x="period", y="count", color="Status", barmode="stack",
-                           title=f"Status mix by period ({y_title})")
-        fig_stack.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white",
-                                height=360, margin=dict(l=0, r=0, t=40, b=0))
-        st.plotly_chart(fig_stack, use_container_width=True)
-
+    # Removed "Status mix by period" section
+    
     st.markdown("---")
     st.subheader("Detailed Lead Breakdown")
 
