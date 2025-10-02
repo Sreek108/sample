@@ -339,18 +339,20 @@ def render_funnel_and_markets(d):
     )
     
     # Calculate proper percentages relative to New (total leads)
+    # Format: count and percentage only (no duplicate count)
     actual_counts = [lost_count, won_count, negotiation_count, meeting_count, interested_count, total_leads]
     percentages = []
     for count in actual_counts:
         if total_leads > 0:
             pct = (count / total_leads) * 100
-            percentages.append(f"{count}<br>{pct:.1f}%")
+            percentages.append(f"{count:,}<br>{pct:.1f}%")
         else:
-            percentages.append(f"{count}<br>0%")
+            percentages.append(f"{count:,}<br>0%")
     
     fig.update_traces(
         textposition="inside", 
-        textfont_color="white", 
+        textfont_color="white",
+        textfont_size=14,
         text=percentages
     )
     
