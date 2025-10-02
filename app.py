@@ -435,40 +435,65 @@ def show_executive_summary(d):
             st.markdown("**Meetings Scheduled**")
             st.markdown(f"<span style='font-size:2rem;'>{meetings_scheduled}</span>", unsafe_allow_html=True)
 
+    # Trend at a glance
     st.markdown("---")
     st.subheader("Trend at a glance")
     trend_style = st.radio("Trend style", ["Line", "Bars", "Bullet"], index=0, horizontal=True, key="__trend_style_exec")
     
     leads_local = leads.copy()
-    if "period" not in leads_local.columns:
-        dt = pd.to_datetime(leads_local.get("CreatedOn"), errors="coerce")
-        leads_local["period"] = dt.dt.to_period("M").apply(lambda p: p.start_time.date())
     
+    # Ensure period exists and use appropriate grain
+    if "period" not in leads_local.columns and "CreatedOn" in leads_local.columns:
+        dt = pd.to_datetime(leads_local["CreatedOn"], errors="coerce")
+        # Use the grain from sidebar filter
+        if grain == "Week":
+            leads_local["period"] = dt.dt.to_period("W").apply(lambda p: p.start_time.date())
+        elif grain == "Month":
+            leads_local["period"] = dt.dt.to_period("M").apply(lambda p: p.start_time.date())
+        else:
+            leads_local["period"] = dt.dt.to_period("Y").apply(lambda p: p.start_time.date())
+    
+    # 1. Leads Trend
     leads_ts = leads_local.groupby("period").size().reset_index(name="value")
     
+    # 2. Conversion Rate Trend (percentage of won leads per period)
     if "LeadStatusId" in leads_local.columns:
-        per_leads = leads_local.groupby("period").size().rename("total")
-        per_won = leads_local.loc[leads_local["LeadStatusId"].eq(won_status_id)].groupby("period").size().rename("won")
-        conv_ts = pd.concat([per_leads, per_won], axis=1).fillna(0.0).reset_index()
+        per_leads = leads_local.groupby("period").size()
+        per_won = leads_local.loc[leads_local["LeadStatusId"].eq(won_status_id)].groupby("period").size()
+        conv_ts = pd.DataFrame({"period": per_leads.index, "total": per_leads.values})
+        conv_ts = conv_ts.merge(
+            pd.DataFrame({"period": per_won.index, "won": per_won.values}),
+            on="period", how="left"
+        ).fillna(0)
         conv_ts["value"] = (conv_ts["won"] / conv_ts["total"] * 100).round(1)
     else:
         conv_ts = pd.DataFrame({"period": [], "value": []})
     
+    # 3. Meetings Scheduled Trend
     meetings = d.get("agent_meeting_assignment")
     if meetings is not None and len(meetings) > 0:
         m = meetings.copy()
         m.columns = m.columns.str.lower()
         date_col = "startdatetime" if "startdatetime" in m.columns else None
         if date_col is not None:
-            m["period"] = pd.to_datetime(m[date_col], errors="coerce").dt.to_period("W").apply(lambda p: p.start_time.date())
+            m["dt"] = pd.to_datetime(m[date_col], errors="coerce")
+            # Apply same period grain as leads
+            if grain == "Week":
+                m["period"] = m["dt"].dt.to_period("W").apply(lambda p: p.start_time.date())
+            elif grain == "Month":
+                m["period"] = m["dt"].dt.to_period("M").apply(lambda p: p.start_time.date())
+            else:
+                m["period"] = m["dt"].dt.to_period("Y").apply(lambda p: p.start_time.date())
+            
             if "meetingstatusid" in m.columns:
                 m = m[m["meetingstatusid"].isin({1, 6})]
-            meet_ts = m.groupby("period").size().reset_index(name="value").rename(columns={"period": "period"})
+            meet_ts = m.groupby("period")["leadid"].nunique().reset_index(name="value")
         else:
             meet_ts = pd.DataFrame({"period": [], "value": []})
     else:
         meet_ts = pd.DataFrame({"period": [], "value": []})
     
+    # Indexing function (optional, for normalized views)
     def _index(df):
         df = df.copy()
         if df.empty:
@@ -496,25 +521,38 @@ def show_executive_summary(d):
             font_color="white",
             showlegend=False
         )
-        fig.update_xaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)", tickfont=dict(color="#a8a8a8", size=10), nticks=4, ticks="outside")
-        fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)", tickfont=dict(color="#a8a8a8", size=10), nticks=3, ticks="outside", range=rng)
+        fig.update_xaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)", tickfont=dict(color="#a8a8a8", size=10), nticks=6, ticks="outside")
+        fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)", tickfont=dict(color="#a8a8a8", size=10), nticks=4, ticks="outside", range=rng)
         return fig
     
     def tile_line(df, color, title):
         df = df.dropna().sort_values("period")
+        if len(df) == 0:
+            fig = go.Figure()
+            fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            return _apply_axes(fig, [0, 1], title)
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df["period"], y=df["idx"], mode="lines+markers", line=dict(color=color, width=3, shape="spline"), marker=dict(size=5, color=color)))
+        fig.add_trace(go.Scatter(x=df["period"], y=df["idx"], mode="lines+markers", 
+                                 line=dict(color=color, width=3, shape="spline"), 
+                                 marker=dict(size=6, color=color)))
         return _apply_axes(fig, df["idx"], title)
     
     def tile_bar(df, color, title):
         df = df.dropna().sort_values("period")
+        if len(df) == 0:
+            fig = go.Figure()
+            fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            return _apply_axes(fig, [0, 1], title)
         fig = go.Figure()
-        fig.add_trace(go.Bar(x=df["period"], y=df["idx"], marker=dict(color=color, line=dict(color="rgba(255,255,255,0.15)", width=0.5)), opacity=0.9))
+        fig.add_trace(go.Bar(x=df["period"], y=df["idx"], 
+                             marker=dict(color=color, line=dict(color="rgba(255,255,255,0.15)", width=0.5)), 
+                             opacity=0.9))
         return _apply_axes(fig, df["idx"], title)
     
     def tile_bullet(df, title, bar_color):
-        if df.empty:
+        if df.empty or len(df) == 0:
             fig = go.Figure()
+            fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
             return _apply_axes(fig, [0, 1], title)
         cur = float(df["idx"].iloc[-1])
         fig = go.Figure(go.Indicator(
@@ -559,10 +597,10 @@ def show_executive_summary(d):
             st.plotly_chart(tile_bullet(conv_ts, "Conversion index", EXEC_GREEN), use_container_width=True)
         with s3:
             st.plotly_chart(tile_bullet(meet_ts, "Meetings index", EXEC_PRIMARY), use_container_width=True)
-
-    st.markdown("---")
-    st.subheader("Lead conversion snapshot")
-    render_funnel_and_markets(d)
+    
+        st.markdown("---")
+        st.subheader("Lead conversion snapshot")
+        render_funnel_and_markets(d)
 
 # Lead Status
 def show_lead_status(d):
