@@ -334,26 +334,15 @@ def render_funnel_and_markets(d):
         x="Count",
         y="Stage",
         category_orders={"Stage": stage_order},
-        color_discrete_sequence=[EXEC_DANGER, "#7CFC00", "#FFA500", EXEC_PRIMARY, EXEC_GREEN, EXEC_BLUE],
-        text="Count",
+        color_discrete_sequence=[EXEC_DANGER, "#7CFC00", "#FFA500", EXEC_PRIMARY, EXEC_GREEN, EXEC_BLUE]
     )
     
-    # Calculate proper percentages relative to New (total leads)
-    # Format: count and percentage only (no duplicate count)
-    actual_counts = [lost_count, won_count, negotiation_count, meeting_count, interested_count, total_leads]
-    percentages = []
-    for count in actual_counts:
-        if total_leads > 0:
-            pct = (count / total_leads) * 100
-            percentages.append(f"{count:,}<br>{pct:.1f}%")
-        else:
-            percentages.append(f"{count:,}<br>0%")
-    
+    # Show ONLY count - no percentage, no duplicates
     fig.update_traces(
         textposition="inside", 
         textfont_color="white",
-        textfont_size=14,
-        text=percentages
+        textfont_size=16,
+        textinfo="value"  # This shows ONLY the count value
     )
     
     fig.update_layout(
