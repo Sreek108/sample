@@ -169,6 +169,15 @@ def load_data(data_dir: str | None = None):
 
     return ds
 
+# Header
+st.markdown(f"""
+<div class="main-header">
+  <h1>🏗️ DAR Global — Executive Dashboard</h1>
+  <h3>AI‑Powered Analytics</h3>
+  <p style="margin: 6px 0 0 0; color: {EXEC_GREEN};">Last Updated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</p>
+</div>
+""", unsafe_allow_html=True)
+
 # Sidebar filters
 with st.sidebar:
     st.markdown("## Filters")
@@ -257,7 +266,6 @@ fdata = filter_by_date(data, grain)
 
 # CORRECTED PROGRESSIVE FUNNEL
 def render_funnel_and_markets(d):
-    # Define the proper funnel stages in order
     stage_order = ["New", "Interested", "Meeting Scheduled", "Negotiation", "Won", "Lost"]
 
     leads = norm(d.get("leads"))
@@ -278,50 +286,36 @@ def render_funnel_and_markets(d):
             .astype(int)
         )
 
-    # Get status ID sets
     interested_ids = ids_from_status_names(["Interested", "Qualified", "Hot", "Warm"])
     negotiation_ids = ids_from_status_names(["Negotiation", "On Hold", "Awaiting Budget", "Proposal Sent"])
     won_ids = ids_from_status_names(["Won", "Closed Won", "Contract Signed"])
     lost_ids = ids_from_status_names(["Lost", "Closed Lost", "Dead", "Not Interested"])
 
-    # Total leads (New) - Starting point
     total_leads = len(leads)
-    
-    # Interested leads (those who are interested OR progressed beyond)
     interested_leads = leads[leads["leadstatusid"].isin(interested_ids | negotiation_ids | won_ids)]
     interested_count = len(interested_leads)
     
-    # Meeting Scheduled (leads who have scheduled/rescheduled meetings)
     meeting_lead_ids = set()
     if ama is not None and {"leadid", "meetingstatusid", "startdatetime"}.issubset(ama.columns):
         meeting_lead_ids = set(
-            ama.loc[
-                ama["meetingstatusid"].isin({1, 6}),  # Scheduled or Rescheduled
-                "leadid"
-            ].dropna().astype(int).unique()
+            ama.loc[ama["meetingstatusid"].isin({1, 6}), "leadid"].dropna().astype(int).unique()
         )
     
-    # Count interested leads who have meetings OR already in negotiation/won
     meeting_scheduled_leads = leads[
         (leads["leadid"].isin(meeting_lead_ids)) | 
         (leads["leadstatusid"].isin(negotiation_ids | won_ids))
     ]
     meeting_count = len(meeting_scheduled_leads)
     
-    # Negotiation (leads currently in negotiation OR already won)
     negotiation_leads = leads[leads["leadstatusid"].isin(negotiation_ids | won_ids)]
     negotiation_count = len(negotiation_leads)
     
-    # Won (leads that successfully closed)
     won_leads = leads[leads["leadstatusid"].isin(won_ids)]
     won_count = len(won_leads)
     
-    # Lost (leads that were lost)
     lost_leads = leads[leads["leadstatusid"].isin(lost_ids)]
     lost_count = len(lost_leads)
 
-    # Build progressive funnel data
-    # For visualization: if count is 0, show a minimum for visibility (or actual 0 if you prefer)
     funnel_data = [
         {"Stage": "New", "Count": total_leads},
         {"Stage": "Interested", "Count": interested_count if interested_count > 0 else 1},
@@ -333,7 +327,6 @@ def render_funnel_and_markets(d):
     
     funnel_df = pd.DataFrame(funnel_data)
 
-    # Create the funnel chart
     fig = px.funnel(
         funnel_df,
         x="Count",
@@ -343,7 +336,6 @@ def render_funnel_and_markets(d):
         text="Count",
     )
     
-    # Customize the text to show actual counts (including 0)
     actual_counts = [total_leads, interested_count, meeting_count, negotiation_count, won_count, lost_count]
     fig.update_traces(
         textposition="inside", 
@@ -360,7 +352,6 @@ def render_funnel_and_markets(d):
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Top markets section
     if countries is not None and "countryid" in leads.columns and "countryname_e" in countries.columns:
         bycountry = (
             leads.groupby("countryid", dropna=True)
@@ -391,11 +382,12 @@ def render_funnel_and_markets(d):
 
 # Executive Summary
 def show_executive_summary(d):
-    leads = d.get("leads")
+    # Get ALL leads (not filtered) for proper KPI calculation
+    all_leads = data.get("leads")
     lead_statuses = d.get("lead_statuses")
     
-    if leads is None or len(leads) == 0:
-        st.info("No data available in the selected range.")
+    if all_leads is None or len(all_leads) == 0:
+        st.info("No data available.")
         return
 
     won_status_id = 9
@@ -405,61 +397,79 @@ def show_executive_summary(d):
             won_status_id = int(match.iloc[0]["leadstatusid"])
 
     st.subheader("Performance KPIs")
-    today = pd.Timestamp.today().normalize()
-    week_start = today - pd.Timedelta(days=today.weekday())
-    month_start = today.replace(day=1)
-    year_start = today.replace(month=1, day=1)
-    date_ranges = {
-        "Week to Date": (week_start, today),
-        "Month to Date": (month_start, today),
-        "Year to Date": (year_start, today)
-    }
-    cols = st.columns(3)
-    meetings = d.get("agent_meeting_assignment")
     
-    for (label, (start, end)), col in zip(date_ranges.items(), cols):
-        leads_period = leads.loc[
-            (pd.to_datetime(leads["CreatedOn"], errors="coerce") >= pd.Timestamp(start)) &
-            (pd.to_datetime(leads["CreatedOn"], errors="coerce") <= pd.Timestamp(end))
-        ] if "CreatedOn" in leads.columns else pd.DataFrame()
+    # Calculate time periods from today
+    today = pd.Timestamp.today().normalize()
+    week_start = today - pd.Timedelta(days=today.weekday())  # Monday of current week
+    month_start = today.replace(day=1)  # First day of current month
+    year_start = today.replace(month=1, day=1)  # First day of current year
+
+    # Create 4 columns for Week, Month, Year, and All Time
+    cols = st.columns(4)
+    all_meetings = data.get("agent_meeting_assignment")
+
+    # Define periods
+    periods = [
+        ("Week to Date", week_start, today),
+        ("Month to Date", month_start, today),
+        ("Year to Date", year_start, today),
+        ("All Time", None, None)
+    ]
+
+    for (label, start, end), col in zip(periods, cols):
+        # Filter leads by period
+        if start is not None and end is not None:
+            leads_period = all_leads.loc[
+                (pd.to_datetime(all_leads["CreatedOn"], errors="coerce") >= pd.Timestamp(start)) &
+                (pd.to_datetime(all_leads["CreatedOn"], errors="coerce") <= pd.Timestamp(end))
+            ] if "CreatedOn" in all_leads.columns else pd.DataFrame()
+        else:
+            # All time - use all leads
+            leads_period = all_leads.copy()
         
-        if meetings is not None and len(meetings) > 0:
-            m = meetings.copy()
+        # Filter meetings by period
+        if all_meetings is not None and len(all_meetings) > 0:
+            m = all_meetings.copy()
             m.columns = m.columns.str.lower()
             date_col = "startdatetime" if "startdatetime" in m.columns else None
+            
             if date_col is not None:
                 m["dt"] = pd.to_datetime(m[date_col], errors="coerce")
-                m = m[(m["dt"] >= pd.Timestamp(start)) & (m["dt"] <= pd.Timestamp(end))]
+                
+                if start is not None and end is not None:
+                    m = m[(m["dt"] >= pd.Timestamp(start)) & (m["dt"] <= pd.Timestamp(end))]
+                
                 if "meetingstatusid" in m.columns:
-                    m = m[m["meetingstatusid"].isin({1, 6})]
+                    m = m[m["meetingstatusid"].isin({1, 6})]  # Scheduled or Rescheduled
                 meetings_period = m
             else:
                 meetings_period = pd.DataFrame()
         else:
             meetings_period = pd.DataFrame()
         
+        # Calculate metrics
         total_leads_p = int(len(leads_period))
-        won_leads_p = int((leads_period["LeadStatusId"] == won_status_id).sum()) if "LeadStatusId" in leads_period.columns else 0
-        conv_rate_p = (won_leads_p / total_leads_p * 100.0) if total_leads_p else 0.0
-        meetings_scheduled = int(meetings_period["leadid"].nunique()) if "leadid" in meetings_period.columns else 0
+        won_leads_p = int((leads_period["LeadStatusId"] == won_status_id).sum()) if "LeadStatusId" in leads_period.columns and len(leads_period) > 0 else 0
+        conv_rate_p = (won_leads_p / total_leads_p * 100.0) if total_leads_p > 0 else 0.0
+        meetings_scheduled = int(meetings_period["leadid"].nunique()) if "leadid" in meetings_period.columns and len(meetings_period) > 0 else 0
         
         with col:
             st.markdown(f"#### {label}")
             st.markdown("**Total Leads**")
-            st.markdown(f"<span style='font-size:2rem;'>{total_leads_p}</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='font-size:2rem;'>{total_leads_p:,}</span>", unsafe_allow_html=True)
             st.markdown("**Conversion Rate**")
             st.markdown(f"<span style='font-size:2rem;'>{conv_rate_p:.1f}%</span>", unsafe_allow_html=True)
             st.markdown("**Meetings Scheduled**")
-            st.markdown(f"<span style='font-size:2rem;'>{meetings_scheduled}</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='font-size:2rem;'>{meetings_scheduled:,}</span>", unsafe_allow_html=True)
 
-    # Trend at a glance
+    # Trend at a glance (use filtered data from sidebar)
+    leads = d.get("leads")
     st.markdown("---")
     st.subheader("Trend at a glance")
     trend_style = st.radio("Trend style", ["Line", "Bars", "Bullet"], index=0, horizontal=True, key="__trend_style_exec")
     
     leads_local = leads.copy()
     
-    # Ensure period exists and use appropriate grain
     if "period" not in leads_local.columns and "CreatedOn" in leads_local.columns:
         dt = pd.to_datetime(leads_local["CreatedOn"], errors="coerce")
         if grain == "Week":
@@ -731,7 +741,7 @@ def show_lead_status(d):
         }
     )
 
-# Navigation (only 2 pages)
+# Navigation
 NAV = [
     ("Executive", "speedometer2", "🎯 Executive Summary"),
     ("Lead Status", "people", "📈 Lead Status"),
@@ -761,4 +771,3 @@ else:
         show_executive_summary(fdata)
     with tabs[1]:
         show_lead_status(fdata)
-
