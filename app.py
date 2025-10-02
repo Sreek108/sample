@@ -264,7 +264,7 @@ def filter_by_date(datasets, grain_sel: str):
 
 fdata = filter_by_date(data, grain)
 
-# CORRECTED FUNNEL: New → Interested → Meeting Scheduled → Negotiation → Won → Lost
+# CORRECTED PROGRESSIVE FUNNEL
 def render_funnel_and_markets(d):
     # Define the proper funnel stages in order
     stage_order = ["New", "Interested", "Meeting Scheduled", "Negotiation", "Won", "Lost"]
@@ -287,57 +287,51 @@ def render_funnel_and_markets(d):
             .astype(int)
         )
 
-    # Get all leads in the cohort
-    cohort = leads.copy()
-    
-    # Get status ID sets for each stage
-    new_ids = ids_from_status_names(["New", "Fresh", "Uncontacted"])
+    # Get status ID sets
     interested_ids = ids_from_status_names(["Interested", "Qualified", "Hot", "Warm"])
     negotiation_ids = ids_from_status_names(["Negotiation", "On Hold", "Awaiting Budget", "Proposal Sent"])
     won_ids = ids_from_status_names(["Won", "Closed Won", "Contract Signed"])
     lost_ids = ids_from_status_names(["Lost", "Closed Lost", "Dead", "Not Interested"])
 
-    # Check for meetings scheduled
-    cohort["has_meeting"] = False
+    # Total leads (New)
+    total_leads = len(leads)
+    
+    # Interested leads (includes those who progressed further)
+    interested_count = len(leads[leads["leadstatusid"].isin(interested_ids | negotiation_ids | won_ids)])
+    
+    # Meeting Scheduled (from interested leads who have meetings)
+    meeting_count = 0
     if ama is not None and {"leadid", "meetingstatusid", "startdatetime"}.issubset(ama.columns):
         meeting_lead_ids = ama.loc[
             ama["meetingstatusid"].isin({1, 6}) &
             (pd.to_datetime(ama["startdatetime"], errors="coerce") <= pd.Timestamp.now()),
             "leadid"
         ].dropna().astype(int).unique()
-        cohort["has_meeting"] = cohort["leadid"].isin(meeting_lead_ids)
-
-    # Assign each lead to ONE stage based on progression hierarchy
-    def assign_stage(row):
-        status_id = row.get("leadstatusid")
-        has_meeting = row.get("has_meeting", False)
         
-        # Check stages in reverse order of progression (most advanced first)
-        if status_id in lost_ids:
-            return "Lost"
-        if status_id in won_ids:
-            return "Won"
-        if status_id in negotiation_ids:
-            return "Negotiation"
-        if has_meeting:
-            return "Meeting Scheduled"
-        if status_id in interested_ids:
-            return "Interested"
-        # Default to New
-        return "New"
+        # Count leads that are interested AND have meetings
+        meeting_count = len(leads[
+            leads["leadid"].isin(meeting_lead_ids) & 
+            leads["leadstatusid"].isin(interested_ids | negotiation_ids | won_ids)
+        ])
+    
+    # Negotiation (from meeting scheduled leads)
+    negotiation_count = len(leads[leads["leadstatusid"].isin(negotiation_ids | won_ids)])
+    
+    # Won (from negotiation)
+    won_count = len(leads[leads["leadstatusid"].isin(won_ids)])
+    
+    # Lost (leads that reached lost status)
+    lost_count = len(leads[leads["leadstatusid"].isin(lost_ids)])
 
-    cohort["Stage"] = cohort.apply(assign_stage, axis=1)
-    
-    # Count leads in each stage
-    stage_counts = cohort["Stage"].value_counts().to_dict()
-    
-    # Build funnel dataframe with all stages (even if count is 0)
-    funnel_data = []
-    for stage in stage_order:
-        funnel_data.append({
-            "Stage": stage,
-            "Count": stage_counts.get(stage, 0)
-        })
+    # Build progressive funnel data
+    funnel_data = [
+        {"Stage": "New", "Count": total_leads},
+        {"Stage": "Interested", "Count": interested_count},
+        {"Stage": "Meeting Scheduled", "Count": meeting_count},
+        {"Stage": "Negotiation", "Count": negotiation_count},
+        {"Stage": "Won", "Count": won_count},
+        {"Stage": "Lost", "Count": lost_count}
+    ]
     
     funnel_df = pd.DataFrame(funnel_data)
 
@@ -461,7 +455,6 @@ def show_executive_summary(d):
     # Ensure period exists and use appropriate grain
     if "period" not in leads_local.columns and "CreatedOn" in leads_local.columns:
         dt = pd.to_datetime(leads_local["CreatedOn"], errors="coerce")
-        # Use the grain from sidebar filter
         if grain == "Week":
             leads_local["period"] = dt.dt.to_period("W").apply(lambda p: p.start_time.date())
         elif grain == "Month":
@@ -469,10 +462,8 @@ def show_executive_summary(d):
         else:
             leads_local["period"] = dt.dt.to_period("Y").apply(lambda p: p.start_time.date())
     
-    # 1. Leads Trend
     leads_ts = leads_local.groupby("period").size().reset_index(name="value")
     
-    # 2. Conversion Rate Trend (percentage of won leads per period)
     if "LeadStatusId" in leads_local.columns:
         per_leads = leads_local.groupby("period").size()
         per_won = leads_local.loc[leads_local["LeadStatusId"].eq(won_status_id)].groupby("period").size()
@@ -485,7 +476,6 @@ def show_executive_summary(d):
     else:
         conv_ts = pd.DataFrame({"period": [], "value": []})
     
-    # 3. Meetings Scheduled Trend
     meetings = d.get("agent_meeting_assignment")
     if meetings is not None and len(meetings) > 0:
         m = meetings.copy()
@@ -493,7 +483,6 @@ def show_executive_summary(d):
         date_col = "startdatetime" if "startdatetime" in m.columns else None
         if date_col is not None:
             m["dt"] = pd.to_datetime(m[date_col], errors="coerce")
-            # Apply same period grain as leads
             if grain == "Week":
                 m["period"] = m["dt"].dt.to_period("W").apply(lambda p: p.start_time.date())
             elif grain == "Month":
@@ -509,7 +498,6 @@ def show_executive_summary(d):
     else:
         meet_ts = pd.DataFrame({"period": [], "value": []})
     
-    # Indexing function (optional, for normalized views)
     def _index(df):
         df = df.copy()
         if df.empty:
@@ -614,7 +602,6 @@ def show_executive_summary(d):
         with s3:
             st.plotly_chart(tile_bullet(meet_ts, "Meetings index", EXEC_PRIMARY), use_container_width=True)
 
-    # Lead conversion snapshot
     st.markdown("---")
     st.subheader("Lead conversion snapshot")
     render_funnel_and_markets(d)
@@ -767,3 +754,4 @@ else:
         show_executive_summary(fdata)
     with tabs[1]:
         show_lead_status(fdata)
+
