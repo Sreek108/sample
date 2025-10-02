@@ -290,7 +290,7 @@ def render_funnel_and_markets(d):
     else:
         st.info("Country data unavailable to build Top markets.")
 
-# Executive Summary with Date Slicer
+# Executive Summary with Date Slicer (3 columns only)
 def show_executive_summary(d):
     all_leads = data.get("leads")
     lead_statuses = d.get("lead_statuses")
@@ -342,14 +342,15 @@ def show_executive_summary(d):
     month_start = today.replace(day=1)
     year_start = today.replace(month=1, day=1)
 
-    cols = st.columns(4)
+    # 3 columns only (removed Selected Range)
+    cols = st.columns(3)
     all_meetings = data.get("agent_meeting_assignment")
 
+    # Only Week, Month, Year (removed Selected Range)
     periods = [
         ("Week to Date", week_start, today),
         ("Month to Date", month_start, today),
-        ("Year to Date", year_start, today),
-        ("Selected Range", pd.Timestamp(date_from), pd.Timestamp(date_to))
+        ("Year to Date", year_start, today)
     ]
 
     for (label, start, end), col in zip(periods, cols):
