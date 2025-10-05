@@ -15,93 +15,104 @@ except Exception:
 # Page config and theme
 st.set_page_config(page_title="DAR Global - Executive Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
+# Theme colors
 EXEC_PRIMARY = "#DAA520"
-EXEC_BLUE = "#1E90FF"
-EXEC_GREEN = "#32CD32"
-EXEC_AMBER = "#F59E0B"
+EXEC_BLUE = "#1E90FF"     # Week
+EXEC_GREEN = "#32CD32"    # Month
+EXEC_AMBER = "#F59E0B"    # Year
 EXEC_DANGER = "#DC143C"
-EXEC_BG = "#1a1a1a"
-EXEC_SURFACE = "#2d2d2d"
+EXEC_BG = "#0f1116"
+EXEC_SURFACE = "#1c1f26"
 
+# Global styles (pane with accent strip + inner separators like the reference)
 st.markdown(f"""
 <style>
 :root {{
   --exec-bg: {EXEC_BG};
   --exec-surface: {EXEC_SURFACE};
-  --exec-primary: {EXEC_PRIMARY};
-  --exec-blue: {EXEC_BLUE};
-  --exec-green: {EXEC_GREEN};
-  --exec-amber: {EXEC_AMBER};
 }}
 /* Hide sidebar */
 [data-testid="stSidebar"] {{ display: none; }}
 
-/* KPI card styles — fixed and equal size */
-.kpi-card {{
-  border: 2px solid var(--kpi-border, {EXEC_PRIMARY});
-  border-radius: 14px;
+/* Period card */
+.kpi-pane {{
+  position: relative;
+  border: 1.5px solid rgba(255,255,255,0.22);
+  border-radius: 12px;
   background: rgba(255,255,255,0.03);
-  padding: 14px 16px;
-  height: 120px;             /* fixed height for consistency */
-  width: 100%;               /* fill its column */
+  padding: 14px 16px 12px 16px;
+  height: 150px;                 /* consistent height like sample */
   display: flex;
   flex-direction: column;
-  justify-content: center;   /* vertical centering */
-  gap: 6px;
-  box-shadow: 0 6px 14px rgba(0,0,0,.18);
+  justify-content: space-between;
+}}
+/* Top accent bar */
+.kpi-pane::before {{
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: var(--accent, #3B82F6);
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
 }}
 .kpi-title {{
-  font-size: .80rem;
-  letter-spacing: .02em;
-  color: #cbd5e1;
-  text-transform: uppercase;
-  white-space: nowrap;       /* keep on one line to avoid height changes */
-  overflow: hidden;
-  text-overflow: ellipsis;
-}}
-.kpi-value {{
-  font-size: 2rem;
+  margin: 2px 0 10px 0;
+  font-size: 1.05rem;
   font-weight: 700;
   color: #ffffff;
-  line-height: 1.15;
 }}
-.kpi-caption {{
-  font-size: .78rem;
-  color: #a3a3a3;
+.kpi-row {{
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;                         /* no gap; we use borders for separators */
+  align-items: center;
 }}
-
-/* KPI group container + vertical separators between groups */
-.kpi-group {{
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 14px;
-  padding: 12px 12px 10px 12px;
+.kpi-cell {{
+  text-align: center;
+  padding: 6px 8px;
 }}
-.kpi-group h4 {{
-  margin: 4px 0 12px 4px;
+.kpi-cell + .kpi-cell {{
+  border-left: 1px solid rgba(255,255,255,0.15);   /* inner vertical separator */
+}}
+.kpi-label {{
+  font-size: .80rem;
+  color: #d2d6dc;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: 6px;
+}}
+.kpi-value {{
+  font-size: 1.6rem;
+  font-weight: 700;
   color: #ffffff;
+  line-height: 1.1;
 }}
-.kpi-v-divider {{
-  width: 1px;
-  background: rgba(255,255,255,0.12);
-  height: 100%;
-  margin: 0 10px;
-  border-radius: 1px;
-}}
+/* Tidy section headers */
+h3, h4 {{ margin-top: .25rem; }}
 </style>
 """, unsafe_allow_html=True)
 
-# Utility: KPI card helper
-def kpi_card(title: str, value, border_color: str = EXEC_PRIMARY, caption: str | None = None):
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        v = f"{value:,}"
-    else:
-        v = str(value)
+# Utility: render one pane (title + 3 KPI cells) with an accent color
+def render_kpi_group(title: str, total_leads: int, conv_rate_pct: float, meetings: int, accent: str):
+    conv_txt = f"{conv_rate_pct:.0f}%" if abs(conv_rate_pct - round(conv_rate_pct)) < 1e-9 else f"{conv_rate_pct:.1f}%"
     html = f"""
-    <div class="kpi-card" style="--kpi-border:{border_color}">
+    <div class="kpi-pane" style="--accent:{accent}">
       <div class="kpi-title">{title}</div>
-      <div class="kpi-value">{v}</div>
-      {f'<div class="kpi-caption">{caption}</div>' if caption else ''}
+      <div class="kpi-row">
+        <div class="kpi-cell">
+          <div class="kpi-label">Total Leads</div>
+          <div class="kpi-value">{total_leads:,}</div>
+        </div>
+        <div class="kpi-cell">
+          <div class="kpi-label">Conversion Rate</div>
+          <div class="kpi-value">{conv_txt}</div>
+        </div>
+        <div class="kpi-cell">
+          <div class="kpi-label">Meeting Scheduled</div>
+          <div class="kpi-value">{meetings:,}</div>
+        </div>
+      </div>
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
@@ -234,7 +245,7 @@ def load_data(data_dir: str | None = None):
 grain = "Month"
 data = load_data("data")
 
-# CORRECTED PROGRESSIVE FUNNEL (New at top, Lost at bottom, count only)
+# Funnel (counts only)
 def render_funnel_and_markets(d):
     stage_order = ["Lost", "Won", "Negotiation", "Meeting Scheduled", "Interested", "New"]
 
@@ -252,8 +263,7 @@ def render_funnel_and_markets(d):
             return set()
         return set(
             statuses.loc[statuses["statusname_e"].str.lower().isin([n.lower() for n in names]), "leadstatusid"]
-            .dropna()
-            .astype(int)
+            .dropna().astype(int)
         )
 
     interested_ids = ids_from_status_names(["Interested", "Qualified", "Hot", "Warm"])
@@ -294,42 +304,24 @@ def render_funnel_and_markets(d):
         {"Stage": "Interested", "Count": interested_count if interested_count > 0 else 1},
         {"Stage": "New", "Count": total_leads}
     ]
-    
     funnel_df = pd.DataFrame(funnel_data)
 
     fig = px.funnel(
-        funnel_df,
-        x="Count",
-        y="Stage",
+        funnel_df, x="Count", y="Stage",
         category_orders={"Stage": stage_order},
         color_discrete_sequence=[EXEC_DANGER, "#7CFC00", "#FFA500", EXEC_PRIMARY, EXEC_GREEN, EXEC_BLUE]
     )
-    
-    fig.update_traces(
-        textposition="inside", 
-        textfont_color="white",
-        textfont_size=16,
-        textinfo="value"
-    )
-    
-    fig.update_layout(
-        height=450,
-        margin=dict(l=0, r=0, t=10, b=10),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)"
-    )
+    fig.update_traces(textposition="inside", textfont_color="white", textfont_size=16, textinfo="value")
+    fig.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=10),
+                      plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
     st.plotly_chart(fig, use_container_width=True)
 
     if countries is not None and "countryid" in leads.columns and "countryname_e" in countries.columns:
         bycountry = (
             leads.groupby("countryid", dropna=True)
-            .size()
-            .reset_index(name="Leads")
-            .merge(
-                countries[["countryid", "countryname_e"]].rename(columns={"countryname_e": "Country"}),
-                on="countryid",
-                how="left",
-            )
+            .size().reset_index(name="Leads")
+            .merge(countries[["countryid", "countryname_e"]].rename(columns={"countryname_e": "Country"}),
+                   on="countryid", how="left")
         )
         total = float(bycountry["Leads"].sum())
         bycountry["Share"] = (bycountry["Leads"] / total * 100.0).round(1) if total > 0 else 0.0
@@ -337,18 +329,15 @@ def render_funnel_and_markets(d):
         st.subheader("Top markets")
         st.dataframe(
             top5[["Country", "Leads", "Share"]],
-            use_container_width=True,
-            hide_index=True,
+            use_container_width=True, hide_index=True,
             column_config={
-                "Share": st.column_config.ProgressColumn(
-                    "Share", format="%.1f%%", min_value=0, max_value=100
-                )
-            },
+                "Share": st.column_config.ProgressColumn("Share", format="%.1f%%", min_value=0, max_value=100)
+            }
         )
     else:
         st.info("Country data unavailable to build Top markets.")
 
-# Executive Summary with Date Slicer (3 columns only) + KPI cards (equal size) + group separation
+# Executive Summary: group cards with accent + separators (Week/Month/Year)
 def show_executive_summary(d):
     all_leads = data.get("leads")
     lead_statuses = d.get("lead_statuses")
@@ -367,29 +356,24 @@ def show_executive_summary(d):
     
     # DATE RANGE SLICER
     col_date1, col_date2, col_date3 = st.columns([1, 1, 2])
-    
-    if "CreatedOn" in all_leads.columns:
+    if "createdon" in norm(all_leads).columns:
         all_dates = pd.to_datetime(all_leads["CreatedOn"], errors="coerce").dropna()
         min_date = all_dates.min().date() if len(all_dates) > 0 else date.today() - timedelta(days=365)
         max_date = all_dates.max().date() if len(all_dates) > 0 else date.today()
     else:
         min_date = date.today() - timedelta(days=365)
         max_date = date.today()
-    
     with col_date1:
         date_from = st.date_input("From Date", value=min_date, min_value=min_date, max_value=max_date, key="date_from")
-    
     with col_date2:
         date_to = st.date_input("To Date", value=max_date, min_value=min_date, max_value=max_date, key="date_to")
-    
     with col_date3:
         st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
         if st.button("Apply Date Range", type="primary"):
             st.rerun()
-    
     st.markdown("---")
     
-    # Filter leads by date range
+    # Filter by date range
     filtered_leads = all_leads.loc[
         (pd.to_datetime(all_leads["CreatedOn"], errors="coerce").dt.date >= date_from) &
         (pd.to_datetime(all_leads["CreatedOn"], errors="coerce").dt.date <= date_to)
@@ -400,17 +384,8 @@ def show_executive_summary(d):
     month_start = today.replace(day=1)
     year_start = today.replace(month=1, day=1)
 
-    # Three group columns with thin separator columns
-    g1, sep1, g2, sep2, g3 = st.columns([1, 0.02, 1, 0.02, 1])
-    period_specs = [
-        ("Week to Date", week_start, today, g1),
-        ("Month to Date", month_start, today, g2),
-        ("Year to Date", year_start, today, g3),
-    ]
-
     all_meetings = data.get("agent_meeting_assignment")
-
-    for label, start, end, container in period_specs:
+    def metrics_for_range(start, end):
         leads_period = filtered_leads.loc[
             (pd.to_datetime(filtered_leads["CreatedOn"], errors="coerce") >= start) &
             (pd.to_datetime(filtered_leads["CreatedOn"], errors="coerce") <= end)
@@ -432,36 +407,30 @@ def show_executive_summary(d):
             meetings_period = pd.DataFrame()
 
         total_leads_p = int(len(leads_period))
-        won_leads_p = int((leads_period["LeadStatusId"] == won_status_id).sum()) if "LeadStatusId" in leads_period.columns and len(leads_period) > 0 else 0
+        won_leads_p = int((leads_period.get("LeadStatusId", pd.Series(dtype="Int64")) == won_status_id).sum()) if not leads_period.empty else 0
         conv_rate_p = (won_leads_p / total_leads_p * 100.0) if total_leads_p > 0 else 0.0
         meetings_scheduled = int(meetings_period["leadid"].nunique()) if "leadid" in meetings_period.columns and len(meetings_period) > 0 else 0
+        return total_leads_p, conv_rate_p, meetings_scheduled
 
-        with container:
-            st.markdown('<div class="kpi-group">', unsafe_allow_html=True)
-            st.markdown(f"<h4>{label}</h4>", unsafe_allow_html=True)
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                kpi_card("Total Leads", total_leads_p, border_color=EXEC_BLUE)
-            with c2:
-                kpi_card("Conversion Rate", f"{conv_rate_p:.1f}%", border_color=EXEC_GREEN)
-            with c3:
-                kpi_card("Meetings Scheduled", meetings_scheduled, border_color=EXEC_AMBER)
-            st.markdown('</div>', unsafe_allow_html=True)
+    # Three panes with different accent colors (like the screenshot)
+    g1, g2, g3 = st.columns(3)
+    with g1:
+        t, c, m = metrics_for_range(week_start, today)
+        render_kpi_group("Week To Date", t, c, m, accent=EXEC_BLUE)
+    with g2:
+        t, c, m = metrics_for_range(month_start, today)
+        render_kpi_group("Month To Date", t, c, m, accent=EXEC_GREEN)
+    with g3:
+        t, c, m = metrics_for_range(year_start, today)
+        render_kpi_group("Year To Date", t, c, m, accent=EXEC_AMBER)
 
-    # Draw vertical dividers between the groups
-    with sep1:
-        st.markdown('<div class="kpi-v-divider" style="margin-top:22px;"></div>', unsafe_allow_html=True)
-    with sep2:
-        st.markdown('<div class="kpi-v-divider" style="margin-top:22px;"></div>', unsafe_allow_html=True)
-
-    # Trend at a glance
+    # Trend at a glance (kept)
     leads = filtered_leads.copy()
     st.markdown("---")
     st.subheader("Trend at a glance")
     trend_style = st.radio("Trend style", ["Line", "Bars", "Bullet"], index=0, horizontal=True, key="__trend_style_exec")
     
     leads_local = leads.copy()
-    
     if "period" not in leads_local.columns and "CreatedOn" in leads_local.columns:
         dt = pd.to_datetime(leads_local["CreatedOn"], errors="coerce")
         if grain == "Week":
@@ -470,17 +439,13 @@ def show_executive_summary(d):
             leads_local["period"] = dt.dt.to_period("M").apply(lambda p: p.start_time.date())
         else:
             leads_local["period"] = dt.dt.to_period("Y").apply(lambda p: p.start_time.date())
-    
     leads_ts = leads_local.groupby("period").size().reset_index(name="value")
     
     if "LeadStatusId" in leads_local.columns:
         per_leads = leads_local.groupby("period").size()
-        per_won = leads_local.loc[leads_local["LeadStatusId"].eq(won_status_id)].groupby("period").size()
+        per_won = leads_local.loc[leads_local["LeadStatusId"].eq(9)].groupby("period").size() if "LeadStatusId" in leads_local.columns else pd.Series(dtype=int)
         conv_ts = pd.DataFrame({"period": per_leads.index, "total": per_leads.values})
-        conv_ts = conv_ts.merge(
-            pd.DataFrame({"period": per_won.index, "won": per_won.values}),
-            on="period", how="left"
-        ).fillna(0)
+        conv_ts = conv_ts.merge(pd.DataFrame({"period": per_won.index, "won": per_won.values}), on="period", how="left").fillna(0)
         conv_ts["value"] = (conv_ts["won"] / conv_ts["total"] * 100).round(1)
     else:
         conv_ts = pd.DataFrame({"period": [], "value": []})
@@ -498,7 +463,6 @@ def show_executive_summary(d):
                 m["period"] = m["dt"].dt.to_period("M").apply(lambda p: p.start_time.date())
             else:
                 m["period"] = m["dt"].dt.to_period("Y").apply(lambda p: p.start_time.date())
-            
             if "meetingstatusid" in m.columns:
                 m = m[m["meetingstatusid"].isin({1, 6})]
             meet_ts = m.groupby("period")["leadid"].nunique().reset_index(name="value")
@@ -613,12 +577,11 @@ def show_executive_summary(d):
 
     st.markdown("---")
     st.subheader("Lead conversion snapshot")
-    
     d_filtered = dict(d)
     d_filtered["leads"] = filtered_leads
     render_funnel_and_markets(d_filtered)
 
-# Lead Status with VERTICAL bar chart (status mix by period removed)
+# Lead Status (kept)
 def show_lead_status(d):
     leads = d.get("leads")
     statuses = d.get("lead_statuses")
@@ -659,32 +622,17 @@ def show_lead_status(d):
     st.markdown("---")
     st.subheader("Lead Distribution Status")
 
-    # VERTICAL BAR CHART
     dist_sorted = counts.sort_values("count", ascending=False)
     fig_bar = px.bar(
-        dist_sorted, 
-        x="Status",
-        y="count",
-        title="Leads by status",
-        color="Status", 
-        color_discrete_sequence=px.colors.qualitative.Set3,
-        text="count"
+        dist_sorted, x="Status", y="count", title="Leads by status",
+        color="Status", color_discrete_sequence=px.colors.qualitative.Set3, text="count"
     )
     fig_bar.update_traces(textposition='outside', textfont_size=12)
-    fig_bar.update_layout(
-        plot_bgcolor="rgba(0,0,0,0)", 
-        paper_bgcolor="rgba(0,0,0,0)", 
-        font_color="white", 
-        height=400,
-        showlegend=False, 
-        margin=dict(l=0, r=0, t=40, b=0),
-        xaxis_title="Status",
-        yaxis_title="Count"
-    )
+    fig_bar.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                          font_color="white", height=400, showlegend=False,
+                          margin=dict(l=0, r=0, t=40, b=0), xaxis_title="Status", yaxis_title="Count")
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    # Removed "Status mix by period" section
-    
     st.markdown("---")
     st.subheader("Detailed Lead Breakdown")
 
@@ -710,9 +658,7 @@ def show_lead_status(d):
         conn_rate = g[["Status", "connect_rate"]]
 
     base = leads.groupby("Status").agg(
-        Leads=("LeadId", "count"),
-        Avg_Age_Days=("age_days", "mean"),
-        Pipeline=("EstimatedBudget", "sum")
+        Leads=("LeadId", "count"), Avg_Age_Days=("age_days", "mean"), Pipeline=("EstimatedBudget", "sum")
     ).reset_index()
     total_leads = float(base["Leads"].sum()) if len(base) else 0.0
     base["Share_%"] = (base["Leads"] / total_leads * 100.0).round(1) if total_leads > 0 else 0.0
@@ -720,7 +666,8 @@ def show_lead_status(d):
     breakdown = (base.merge(meet_rate, on="Status", how="left")
                       .merge(conn_rate, on="Status", how="left"))
     breakdown["meet_leads"] = breakdown["meet_leads"].fillna(0.0)
-    breakdown["Meeting_Rate_%"] = (breakdown["meet_leads"] / breakdown["Leads"] * 100.0).replace([np.inf, -np.inf], 0).fillna(0.0).round(1)
+    breakdown["Meeting_Rate_%"] = (breakdown["meet_leads"] / breakdown["Leads"] * 100.0
+                                   ).replace([np.inf, -np.inf], 0).fillna(0.0).round(1)
     breakdown["connect_rate"] = breakdown["connect_rate"].fillna(0.0).round(2)
     breakdown["Avg_Age_Days"] = breakdown["Avg_Age_Days"].fillna(0.0).round(1)
     breakdown = breakdown.sort_values(["Leads", "Pipeline"], ascending=False)
@@ -739,9 +686,11 @@ def show_lead_status(d):
     )
 
 # Create a simple filtered dataset for navigation
-fdata = {"leads": data.get("leads"), "lead_statuses": data.get("lead_statuses"), 
-         "agent_meeting_assignment": data.get("agent_meeting_assignment"),
-         "countries": data.get("countries"), "calls": data.get("calls")}
+fdata = {
+    "leads": data.get("leads"), "lead_statuses": data.get("lead_statuses"),
+    "agent_meeting_assignment": data.get("agent_meeting_assignment"),
+    "countries": data.get("countries"), "calls": data.get("calls")
+}
 
 # Navigation
 NAV = [
@@ -751,13 +700,10 @@ NAV = [
 
 if HAS_OPTION_MENU:
     selected = option_menu(
-        None,
-        [n[0] for n in NAV],
-        icons=[n[1] for n in NAV],
-        orientation="horizontal",
-        default_index=0,
+        None, [n[0] for n in NAV], icons=[n[1] for n in NAV],
+        orientation="horizontal", default_index=0,
         styles={
-            "container": {"padding": "0!important", "background-color": "#0f1116"},
+            "container": {"padding": "0!important", "background-color": EXEC_BG},
             "icon": {"color": EXEC_PRIMARY, "font-size": "16px"},
             "nav-link": {"font-size": "14px", "color": "#d0d0d0", "--hover-color": "#21252b"},
             "nav-link-selected": {"background-color": EXEC_SURFACE}
