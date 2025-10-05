@@ -69,6 +69,25 @@ st.markdown(f"""
   font-size: .78rem;
   color: #a3a3a3;
 }}
+
+/* KPI group container + vertical separators between groups */
+.kpi-group {{
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 12px 12px 10px 12px;
+}}
+.kpi-group h4 {{
+  margin: 4px 0 12px 4px;
+  color: #ffffff;
+}}
+.kpi-v-divider {{
+  width: 1px;
+  background: rgba(255,255,255,0.12);
+  height: 100%;
+  margin: 0 10px;
+  border-radius: 1px;
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -329,7 +348,7 @@ def render_funnel_and_markets(d):
     else:
         st.info("Country data unavailable to build Top markets.")
 
-# Executive Summary with Date Slicer (3 columns only) + KPI cards (equal size)
+# Executive Summary with Date Slicer (3 columns only) + KPI cards (equal size) + group separation
 def show_executive_summary(d):
     all_leads = data.get("leads")
     lead_statuses = d.get("lead_statuses")
@@ -381,30 +400,29 @@ def show_executive_summary(d):
     month_start = today.replace(day=1)
     year_start = today.replace(month=1, day=1)
 
-    cols = st.columns(3)
-    all_meetings = data.get("agent_meeting_assignment")
-
-    periods = [
-        ("Week to Date", week_start, today),
-        ("Month to Date", month_start, today),
-        ("Year to Date", year_start, today)
+    # Three group columns with thin separator columns
+    g1, sep1, g2, sep2, g3 = st.columns([1, 0.02, 1, 0.02, 1])
+    period_specs = [
+        ("Week to Date", week_start, today, g1),
+        ("Month to Date", month_start, today, g2),
+        ("Year to Date", year_start, today, g3),
     ]
 
-    for (label, start, end), col in zip(periods, cols):
+    all_meetings = data.get("agent_meeting_assignment")
+
+    for label, start, end, container in period_specs:
         leads_period = filtered_leads.loc[
             (pd.to_datetime(filtered_leads["CreatedOn"], errors="coerce") >= start) &
             (pd.to_datetime(filtered_leads["CreatedOn"], errors="coerce") <= end)
         ] if "CreatedOn" in filtered_leads.columns else pd.DataFrame()
-        
+
         if all_meetings is not None and len(all_meetings) > 0:
             m = all_meetings.copy()
             m.columns = m.columns.str.lower()
             date_col = "startdatetime" if "startdatetime" in m.columns else None
-            
             if date_col is not None:
                 m["dt"] = pd.to_datetime(m[date_col], errors="coerce")
                 m = m[(m["dt"] >= start) & (m["dt"] <= end)]
-                
                 if "meetingstatusid" in m.columns:
                     m = m[m["meetingstatusid"].isin({1, 6})]
                 meetings_period = m
@@ -412,15 +430,15 @@ def show_executive_summary(d):
                 meetings_period = pd.DataFrame()
         else:
             meetings_period = pd.DataFrame()
-        
+
         total_leads_p = int(len(leads_period))
         won_leads_p = int((leads_period["LeadStatusId"] == won_status_id).sum()) if "LeadStatusId" in leads_period.columns and len(leads_period) > 0 else 0
         conv_rate_p = (won_leads_p / total_leads_p * 100.0) if total_leads_p > 0 else 0.0
         meetings_scheduled = int(meetings_period["leadid"].nunique()) if "leadid" in meetings_period.columns and len(meetings_period) > 0 else 0
-        
-        with col:
-            st.markdown(f"#### {label}")
-            # three equal columns; card width 100% and fixed height in CSS keeps all the same size
+
+        with container:
+            st.markdown('<div class="kpi-group">', unsafe_allow_html=True)
+            st.markdown(f"<h4>{label}</h4>", unsafe_allow_html=True)
             c1, c2, c3 = st.columns(3)
             with c1:
                 kpi_card("Total Leads", total_leads_p, border_color=EXEC_BLUE)
@@ -428,6 +446,13 @@ def show_executive_summary(d):
                 kpi_card("Conversion Rate", f"{conv_rate_p:.1f}%", border_color=EXEC_GREEN)
             with c3:
                 kpi_card("Meetings Scheduled", meetings_scheduled, border_color=EXEC_AMBER)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    # Draw vertical dividers between the groups
+    with sep1:
+        st.markdown('<div class="kpi-v-divider" style="margin-top:22px;"></div>', unsafe_allow_html=True)
+    with sep2:
+        st.markdown('<div class="kpi-v-divider" style="margin-top:22px;"></div>', unsafe_allow_html=True)
 
     # Trend at a glance
     leads = filtered_leads.copy()
