@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
@@ -608,7 +609,7 @@ def show_executive_summary(d):
     d2["leads"] = filtered_leads
     render_funnel_and_markets(d2)
 
-# Lead Status page (DARK BAR COLORS)
+# Lead Status page
 def show_lead_status(d):
     leads  = d.get("leads")
     stats  = d.get("lead_statuses")
@@ -648,46 +649,13 @@ def show_lead_status(d):
 
     st.markdown("---")
     st.subheader("Lead Distribution Status")
-
-    # Darker, high-contrast palette for bars on light theme
-    dark_palette = [
-        "#1f2937",  # slate-800
-        "#374151",  # gray-700
-        "#4b5563",  # gray-600
-        "#111827",  # gray-900
-        "#0f766e",  # teal-700
-        "#7c2d12",  # orange-900
-        "#1e3a8a",  # blue-900
-        "#065f46",  # emerald-800
-        "#6b21a8",  # purple-800
-        "#7f1d1d",  # red-900
-    ]
-
     dist_sorted = counts.sort_values("count", ascending=False)
-    fig_bar = px.bar(
-        dist_sorted,
-        x="Status",
-        y="count",
-        title="Leads by status",
-        color="Status",
-        color_discrete_sequence=dark_palette,
-        text="count",
-    )
-    fig_bar.update_traces(
-        textposition='outside',
-        textfont_size=12,
-        marker_line=dict(color="rgba(255,255,255,0.6)", width=0.5)  # light outline for pop
-    )
-    fig_bar.update_layout(
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        font_color=TEXT_MAIN,
-        height=400,
-        showlegend=False,
-        margin=dict(l=0, r=0, t=40, b=0),
-        xaxis_title="Status",
-        yaxis_title="Count"
-    )
+    fig_bar = px.bar(dist_sorted, x="Status", y="count", title="Leads by status",
+                     color="Status", color_discrete_sequence=px.colors.qualitative.Set3, text="count")
+    fig_bar.update_traces(textposition='outside', textfont_size=12)
+    fig_bar.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                          font_color=TEXT_MAIN, height=400, showlegend=False,
+                          margin=dict(l=0,r=0,t=40,b=0), xaxis_title="Status", yaxis_title="Count")
     st.plotly_chart(fig_bar, use_container_width=True)
 
     st.markdown("---")
@@ -777,3 +745,4 @@ else:
         show_executive_summary(fdata)
     with tabs[1]:
         show_lead_status(fdata)
+```
