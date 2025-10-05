@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
@@ -745,4 +744,3 @@ else:
         show_executive_summary(fdata)
     with tabs[1]:
         show_lead_status(fdata)
-```
