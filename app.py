@@ -370,34 +370,38 @@ def render_funnel_and_markets(d):
     else:
         st.info("Country data unavailable to build Top markets.")
 
-# Executive summary with KPI panes and bordered trend tiles
+# Executive summary with KPI panes and bordered trend tiles (date fixes applied)
 def show_executive_summary(d):
-    all_leads     = data.get("leads")
+    leads_all = d.get("leads")
     lead_statuses = d.get("lead_statuses")
 
-    if all_leads is None or len(all_leads)==0:
+    if leads_all is None or len(leads_all) == 0:
         st.info("No data available.")
         return
 
+    # Resolve Won status id safely
     won_status_id = 9
     if lead_statuses is not None and "statusname_e" in lead_statuses.columns:
-        m = lead_statuses.loc[lead_statuses["statusname_e"].str.lower()=="won"]
+        m = lead_statuses.loc[lead_statuses["statusname_e"].str.lower() == "won"]
         if not m.empty and "leadstatusid" in m.columns:
             won_status_id = int(m.iloc[0]["leadstatusid"])
 
     st.subheader("Performance KPIs")
 
-    # Date slicer
-    c1, c2, c3 = st.columns([1,1,2])
-    if "CreatedOn" in all_leads.columns:
-        all_dates = pd.to_datetime(all_leads["CreatedOn"], errors="coerce").dropna()
-        min_date  = all_dates.min().date() if len(all_dates)>0 else date.today()-timedelta(days=365)
-        max_date  = all_dates.max().date() if len(all_dates)>0 else date.today()
+    # Date slicer defaults from data
+    c1, c2, c3 = st.columns([1, 1, 2])
+    if "CreatedOn" in leads_all.columns:
+        all_dates = pd.to_datetime(leads_all["CreatedOn"], errors="coerce").dropna()
+        gmin = all_dates.min().date() if len(all_dates) else date.today() - timedelta(days=365)
+        gmax = all_dates.max().date() if len(all_dates) else date.today()
     else:
-        min_date, max_date = date.today()-timedelta(days=365), date.today()
+        gmin = date.today() - timedelta(days=365)
+        gmax = date.today()
 
-    with c1: date_from = st.date_input("From Date", value=min_date, min_value=min_date, max_value=max_date, key="date_from")
-    with c2: date_to   = st.date_input("To Date",   value=max_date, min_value=min_date, max_value=max_date, key="date_to")
+    with c1:
+        date_from = st.date_input("From Date", value=gmin, min_value=gmin, max_value=gmax, key="date_from")
+    with c2:
+        date_to = st.date_input("To Date", value=gmax, min_value=gmin, max_value=gmax, key="date_to")
     with c3:
         st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
         if st.button("Apply Date Range", type="primary"):
@@ -405,32 +409,48 @@ def show_executive_summary(d):
 
     st.markdown("---")
 
-    # Filter range
-    filtered = all_leads.loc[
-        (pd.to_datetime(all_leads["CreatedOn"], errors="coerce").dt.date >= date_from) &
-        (pd.to_datetime(all_leads["CreatedOn"], errors="coerce").dt.date <= date_to)
-    ] if "CreatedOn" in all_leads.columns else all_leads.copy()
+    # Normalize endpoints and filter once for downstream visuals
+    start_day = pd.Timestamp(date_from)
+    end_day = pd.Timestamp(date_to)
+    if "CreatedOn" in leads_all.columns:
+        created = pd.to_datetime(leads_all["CreatedOn"], errors="coerce")
+        filtered_leads = leads_all.loc[(created.dt.date >= start_day.date()) & (created.dt.date <= end_day.date())].copy()
+    else:
+        filtered_leads = leads_all.copy()
 
-    today       = pd.Timestamp.today().normalize()
-    week_start  = today - pd.Timedelta(days=today.weekday())
-    month_start = today.replace(day=1)
-    year_start  = today.replace(month=1, day=1)
+    # Helper to clamp a period start to the selected From Date
+    def clamp_start(period_start):
+        return max(pd.Timestamp(period_start), start_day)
+
+    # Compute period anchors based on To Date (not system today)
+    week_start_raw = end_day - pd.Timedelta(days=end_day.weekday())
+    month_start_raw = end_day.replace(day=1)
+    year_start_raw = end_day.replace(month=1, day=1)
+
+    week_start = clamp_start(week_start_raw)
+    month_start = clamp_start(month_start_raw)
+    year_start = clamp_start(year_start_raw)
 
     meetings_all = d.get("agent_meeting_assignment")
 
-    def metrics_for(start, end):
-        lp = filtered.loc[
-            (pd.to_datetime(filtered["CreatedOn"], errors="coerce") >= start) &
-            (pd.to_datetime(filtered["CreatedOn"], errors="coerce") <= end)
-        ] if "CreatedOn" in filtered.columns else pd.DataFrame()
+    def metrics_between(start_ts: pd.Timestamp, end_ts: pd.Timestamp):
+        # Leads in period
+        if "CreatedOn" in filtered_leads.columns:
+            dt = pd.to_datetime(filtered_leads["CreatedOn"], errors="coerce")
+            lp = filtered_leads.loc[(dt >= start_ts) & (dt <= end_ts)].copy()
+        else:
+            lp = pd.DataFrame()
 
-        if meetings_all is not None and len(meetings_all)>0:
-            m = meetings_all.copy(); m.columns = m.columns.str.lower()
-            date_col = "startdatetime" if "startdatetime" in m.columns else None
-            if date_col is not None:
-                m["dt"] = pd.to_datetime(m[date_col], errors="coerce")
-                m = m[(m["dt"]>=start) & (m["dt"]<=end)]
-                if "meetingstatusid" in m.columns: m = m[m["meetingstatusid"].isin({1,6})]
+        # Meetings in period
+        if meetings_all is not None and len(meetings_all) > 0:
+            m = meetings_all.copy()
+            m.columns = m.columns.str.lower()
+            dtcol = "startdatetime" if "startdatetime" in m.columns else None
+            if dtcol is not None:
+                m["dt"] = pd.to_datetime(m[dtcol], errors="coerce")
+                m = m[(m["dt"] >= start_ts) & (m["dt"] <= end_ts)]
+                if "meetingstatusid" in m.columns:
+                    m = m[m["meetingstatusid"].isin({1, 6})]
                 mp = m
             else:
                 mp = pd.DataFrame()
@@ -438,20 +458,21 @@ def show_executive_summary(d):
             mp = pd.DataFrame()
 
         total = int(len(lp))
-        won   = int((lp.get("LeadStatusId", pd.Series(dtype="Int64"))==won_status_id).sum()) if not lp.empty else 0
-        cr    = (won/total*100.0) if total>0 else 0.0
-        meet  = int(mp["leadid"].nunique()) if "leadid" in mp.columns and len(mp)>0 else 0
-        return total, cr, meet
+        won = int((lp.get("LeadStatusId", pd.Series(dtype="Int64")) == won_status_id).sum()) if total else 0
+        conv = (won / total * 100.0) if total else 0.0
+        meet = int(mp["leadid"].nunique()) if "leadid" in mp.columns and len(mp) > 0 else 0
+        return total, conv, meet
 
-    col_w, col_m, col_y = st.columns(3)
-    with col_w:
-        t,c,m = metrics_for(week_start, today)
+    # Three panes anchored to To Date and clamped to From Date
+    g1, g2, g3 = st.columns(3)
+    with g1:
+        t, c, m = metrics_between(week_start, end_day)
         render_kpi_group("Week To Date", t, c, m, accent=ACCENT_BLUE)
-    with col_m:
-        t,c,m = metrics_for(month_start, today)
+    with g2:
+        t, c, m = metrics_between(month_start, end_day)
         render_kpi_group("Month To Date", t, c, m, accent=ACCENT_GREEN)
-    with col_y:
-        t,c,m = metrics_for(year_start, today)
+    with g3:
+        t, c, m = metrics_between(year_start, end_day)
         render_kpi_group("Year To Date", t, c, m, accent=ACCENT_AMBER)
 
     # Trend at a glance (light layout)
@@ -459,7 +480,7 @@ def show_executive_summary(d):
     st.subheader("Trend at a glance")
     trend_style = st.radio("Trend style", ["Line","Bars","Bullet"], index=0, horizontal=True, key="__trend_style_exec")
 
-    leads_local = filtered.copy()
+    leads_local = filtered_leads.copy()
     if "period" not in leads_local.columns and "CreatedOn" in leads_local.columns:
         dt = pd.to_datetime(leads_local["CreatedOn"], errors="coerce")
         if grain=="Week":
@@ -471,9 +492,9 @@ def show_executive_summary(d):
 
     leads_ts = leads_local.groupby("period").size().reset_index(name="value") if "period" in leads_local.columns else pd.DataFrame({"period":[],"value":[]})
     if "LeadStatusId" in leads_local.columns and "period" in leads_local.columns:
-        per_leads = leads_local.groupby("period").size()
+        per_total = leads_local.groupby("period").size()
         per_won   = leads_local.loc[leads_local["LeadStatusId"].eq(won_status_id)].groupby("period").size()
-        conv_ts   = pd.DataFrame({"period": per_leads.index, "total": per_leads.values}).merge(
+        conv_ts   = pd.DataFrame({"period": per_total.index, "total": per_total.values}).merge(
             pd.DataFrame({"period": per_won.index, "won": per_won.values}), on="period", how="left"
         ).fillna(0.0)
         conv_ts["value"] = (conv_ts["won"]/conv_ts["total"]*100).round(1)
@@ -583,8 +604,9 @@ def show_executive_summary(d):
 
     st.markdown("---")
     st.subheader("Lead conversion snapshot")
-    d_filtered = dict(d); d_filtered["leads"] = filtered
-    render_funnel_and_markets(d_filtered)
+    d2 = dict(d)
+    d2["leads"] = filtered_leads
+    render_funnel_and_markets(d2)
 
 # Lead Status page
 def show_lead_status(d):
