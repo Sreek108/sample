@@ -12,34 +12,54 @@ try:
 except Exception:
     HAS_OPTION_MENU = False
 
-# Page config and theme
-st.set_page_config(page_title="DAR Global - Executive Dashboard", layout="wide", initial_sidebar_state="collapsed")
+# Page config
+st.set_page_config(
+    page_title="DAR Global - Executive Dashboard",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
-# Theme colors
-EXEC_PRIMARY = "#DAA520"
-EXEC_BLUE    = "#1E90FF"   # Week
-EXEC_GREEN   = "#32CD32"   # Month
-EXEC_AMBER   = "#F59E0B"   # Year
-EXEC_DANGER  = "#DC143C"
-EXEC_BG      = "#0f1116"
-EXEC_SURFACE = "#1c1f26"
+# Light theme palette
+PRIMARY_GOLD = "#DAA520"
+ACCENT_BLUE  = "#1E90FF"   # Week
+ACCENT_GREEN = "#32CD32"   # Month
+ACCENT_AMBER = "#F59E0B"   # Year
+ACCENT_RED   = "#DC143C"
 
-# Global styles: KPI panes (use native bordered containers for trends)
+BG_PAGE     = "#F6F7FB"    # page background
+BG_SURFACE  = "#FFFFFF"    # cards/surfaces
+TEXT_MAIN   = "#111827"    # near-black
+TEXT_MUTED  = "#475467"    # muted gray
+BORDER_COL  = "rgba(0,0,0,0.10)"
+DIVIDER_COL = "rgba(0,0,0,0.12)"
+GRID_COL    = "rgba(0,0,0,0.06)"
+
+# Global light styles (escape braces for f-string)
 st.markdown(f"""
 <style>
 :root {{
-  --exec-bg: {EXEC_BG};
-  --exec-surface: {EXEC_SURFACE};
+  --bg-page: {BG_PAGE};
+  --bg-surface: {BG_SURFACE};
+  --text-main: {TEXT_MAIN};
+  --text-muted: {TEXT_MUTED};
+  --border-col: {BORDER_COL};
+  --divider-col: {DIVIDER_COL};
 }}
+
+/* Page bg */
+section.main > div.block-container {{
+  background: var(--bg-page);
+}}
+
 /* Hide sidebar */
 [data-testid="stSidebar"] {{ display: none; }}
 
-/* Period card with accent strip and inner separators */
+/* Period card with colored top accent and inner separators (light) */
 .kpi-pane {{
   position: relative;
-  border: 1.5px solid rgba(255,255,255,0.22);
+  border: 1px solid var(--border-col);
   border-radius: 12px;
-  background: rgba(255,255,255,0.03);
+  background: var(--bg-surface);
   padding: 14px 16px 12px 16px;
   height: 150px;
   display: flex; flex-direction: column; justify-content: space-between;
@@ -50,21 +70,24 @@ st.markdown(f"""
   border-top-left-radius: 12px; border-top-right-radius: 12px;
 }}
 .kpi-title {{
-  margin: 2px 0 10px 0; font-size: 1.05rem; font-weight: 700; color: #ffffff;
+  margin: 2px 0 10px 0; font-size: 1.05rem; font-weight: 700; color: var(--text-main);
 }}
 .kpi-row {{
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; align-items: center;
 }}
 .kpi-cell {{ text-align: center; padding: 6px 8px; }}
-.kpi-cell + .kpi-cell {{ border-left: 1px solid rgba(255,255,255,0.15); }}
+.kpi-cell + .kpi-cell {{ border-left: 1px solid var(--divider-col); }}
 .kpi-label {{
-  font-size: .80rem; color: #d2d6dc; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px;
+  font-size: .80rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px;
 }}
 .kpi-value {{
-  font-size: 1.6rem; font-weight: 700; color: #ffffff; line-height: 1.1;
+  font-size: 1.6rem; font-weight: 700; color: var(--text-main); line-height: 1.1;
 }}
 
-h3, h4 {{ margin-top: .25rem; }}
+/* Headings color */
+h1, h2, h3, h4, h5, h6, label, p, span, div, .st-emotion-cache-10trblm {{
+  color: var(--text-main);
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -92,7 +115,7 @@ def render_kpi_group(title: str, total_leads: int, conv_rate_pct: float, meeting
     """
     st.markdown(html, unsafe_allow_html=True)
 
-# Utility: bordered trend tile using Streamlit native container (works reliably)
+# Utility: bordered trend tile using Streamlit native container
 def trend_box(fig):
     with st.container(border=True):
         st.plotly_chart(fig, use_container_width=True)
@@ -319,10 +342,15 @@ def render_funnel_and_markets(d):
     fig = px.funnel(
         funnel_df, x="Count", y="Stage",
         category_orders={"Stage":stage_order},
-        color_discrete_sequence=[EXEC_DANGER,"#7CFC00","#FFA500",EXEC_PRIMARY,EXEC_GREEN,EXEC_BLUE]
+        color_discrete_sequence=[ACCENT_RED,"#34D399","#F59E0B",PRIMARY_GOLD,ACCENT_GREEN,ACCENT_BLUE]
     )
-    fig.update_traces(textposition="inside", textfont_color="white", textfont_size=16, textinfo="value")
-    fig.update_layout(height=450, margin=dict(l=0,r=0,t=10,b=10), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+    # Light theme text
+    fig.update_traces(textposition="inside", textfont_color=TEXT_MAIN, textfont_size=16, textinfo="value")
+    fig.update_layout(
+        height=450, margin=dict(l=0,r=0,t=10,b=10),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        font_color=TEXT_MAIN
+    )
     st.plotly_chart(fig, use_container_width=True)
 
     if countries is not None and "countryid" in leads.columns and "countryname_e" in countries.columns:
@@ -342,7 +370,7 @@ def render_funnel_and_markets(d):
     else:
         st.info("Country data unavailable to build Top markets.")
 
-# Executive summary with KPI panes and native bordered trend tiles
+# Executive summary with KPI panes and bordered trend tiles
 def show_executive_summary(d):
     all_leads     = data.get("leads")
     lead_statuses = d.get("lead_statuses")
@@ -418,15 +446,15 @@ def show_executive_summary(d):
     col_w, col_m, col_y = st.columns(3)
     with col_w:
         t,c,m = metrics_for(week_start, today)
-        render_kpi_group("Week To Date", t, c, m, accent=EXEC_BLUE)
+        render_kpi_group("Week To Date", t, c, m, accent=ACCENT_BLUE)
     with col_m:
         t,c,m = metrics_for(month_start, today)
-        render_kpi_group("Month To Date", t, c, m, accent=EXEC_GREEN)
+        render_kpi_group("Month To Date", t, c, m, accent=ACCENT_GREEN)
     with col_y:
         t,c,m = metrics_for(year_start, today)
-        render_kpi_group("Year To Date", t, c, m, accent=EXEC_AMBER)
+        render_kpi_group("Year To Date", t, c, m, accent=ACCENT_AMBER)
 
-    # Trend at a glance
+    # Trend at a glance (light layout)
     st.markdown("---")
     st.subheader("Trend at a glance")
     trend_style = st.radio("Trend style", ["Line","Bars","Bullet"], index=0, horizontal=True, key="__trend_style_exec")
@@ -488,21 +516,21 @@ def show_executive_summary(d):
         pad  = max(1.0, (ymax-ymin)*0.12)
         fig.update_layout(
             height=180,
-            title=dict(text=title, x=0.01, font=dict(size=12, color="#cfcfcf")),
+            title=dict(text=title, x=0.01, font=dict(size=12, color=TEXT_MUTED)),
             margin=dict(l=6,r=6,t=24,b=8),
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
-            font_color="white",
+            font_color=TEXT_MAIN,
             showlegend=False
         )
-        fig.update_xaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)", tickfont=dict(color="#a8a8a8", size=10), nticks=6, ticks="outside")
-        fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,0.08)", tickfont=dict(color="#a8a8a8", size=10), nticks=4, ticks="outside", range=[ymin-pad, ymax+pad])
+        fig.update_xaxes(showgrid=True, gridcolor=GRID_COL, tickfont=dict(color=TEXT_MUTED, size=10), nticks=6, ticks="outside")
+        fig.update_yaxes(showgrid=True, gridcolor=GRID_COL, tickfont=dict(color=TEXT_MUTED, size=10), nticks=4, ticks="outside", range=[ymin-pad, ymax+pad])
         return fig
 
     def tile_line(df, color, title):
         df = df.dropna().sort_values("period")
         if len(df)==0:
-            fig = go.Figure(); fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            fig = go.Figure(); fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(color=TEXT_MUTED))
             return _apply_axes(fig,[0,1],title)
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df["period"], y=df["idx"], mode="lines+markers",
@@ -512,45 +540,46 @@ def show_executive_summary(d):
     def tile_bar(df, color, title):
         df = df.dropna().sort_values("period")
         if len(df)==0:
-            fig = go.Figure(); fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            fig = go.Figure(); fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(color=TEXT_MUTED))
             return _apply_axes(fig,[0,1],title)
         fig = go.Figure()
         fig.add_trace(go.Bar(x=df["period"], y=df["idx"],
-                             marker=dict(color=color, line=dict(color="rgba(255,255,255,0.15)", width=0.5)), opacity=0.9))
+                             marker=dict(color=color, line=dict(color="rgba(0,0,0,0.08)", width=0.5)), opacity=0.95))
         return _apply_axes(fig, df["idx"], title)
 
     def tile_bullet(df, title, bar_color):
         if df.empty or len(df)==0:
-            fig = go.Figure(); fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            fig = go.Figure(); fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(color=TEXT_MUTED))
             return _apply_axes(fig,[0,1],title)
         cur = float(df["idx"].iloc[-1])
         fig = go.Figure(go.Indicator(
-            mode="number+gauge+delta", value=cur, number={'valueformat': ".0f"}, delta={'reference': 100},
+            mode="number+gauge+delta", value=cur, number={'valueformat': ".0f", 'font': {'color': TEXT_MAIN}},
+            delta={'reference': 100},
             gauge={{'shape':"bullet",'axis':{{'range':[80,120]}},'steps':[
-                    {{'range':[80,95], 'color':"rgba(220,20,60,0.35)"}},
-                    {{'range':[95,105],'color':"rgba(255,215,0,0.35)"}},
-                    {{'range':[105,120],'color':"rgba(50,205,50,0.35)"}}
+                    {{'range':[80,95], 'color':"rgba(239,68,68,0.20)"}},
+                    {{'range':[95,105],'color':"rgba(234,179,8,0.20)"}},
+                    {{'range':[105,120],'color':"rgba(34,197,94,0.20)"}}
                 ],
                 'bar':{{'color':bar_color}},
-                'threshold':{{'line':{{'color':'#fff','width':2}}, 'value':100}}
+                'threshold':{{'line':{{'color':'#111827','width':2}}, 'value':100}}
             }}
         ))
-        fig.update_layout(height=120, margin=dict(l=8,r=8,t=26,b=8), paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+        fig.update_layout(height=120, margin=dict(l=8,r=8,t=26,b=8), paper_bgcolor="rgba(0,0,0,0)", font_color=TEXT_MAIN)
         return fig
 
     s1, s2, s3 = st.columns(3)
     if trend_style=="Line":
-        with s1: trend_box(tile_line(leads_ts, EXEC_BLUE,   "Leads trend (indexed)"))
-        with s2: trend_box(tile_line(conv_ts,  EXEC_GREEN,  "Conversion rate (indexed)"))
-        with s3: trend_box(tile_line(meet_ts,  EXEC_PRIMARY,"Meeting scheduled (indexed)"))
+        with s1: trend_box(tile_line(leads_ts, ACCENT_BLUE,   "Leads trend (indexed)"))
+        with s2: trend_box(tile_line(conv_ts,  ACCENT_GREEN,  "Conversion rate (indexed)"))
+        with s3: trend_box(tile_line(meet_ts,  PRIMARY_GOLD,  "Meeting scheduled (indexed)"))
     elif trend_style=="Bars":
-        with s1: trend_box(tile_bar(leads_ts, EXEC_BLUE,   "Leads trend (indexed)"))
-        with s2: trend_box(tile_bar(conv_ts,  EXEC_GREEN,  "Conversion rate (indexed)"))
-        with s3: trend_box(tile_bar(meet_ts,  EXEC_PRIMARY,"Meeting scheduled (indexed)"))
+        with s1: trend_box(tile_bar(leads_ts, ACCENT_BLUE,   "Leads trend (indexed)"))
+        with s2: trend_box(tile_bar(conv_ts,  ACCENT_GREEN,  "Conversion rate (indexed)"))
+        with s3: trend_box(tile_bar(meet_ts,  PRIMARY_GOLD,  "Meeting scheduled (indexed)"))
     else:
-        with s1: trend_box(tile_bullet(leads_ts, "Leads index", EXEC_BLUE))
-        with s2: trend_box(tile_bullet(conv_ts,  "Conversion index", EXEC_GREEN))
-        with s3: trend_box(tile_bullet(meet_ts,  "Meetings index", EXEC_PRIMARY))
+        with s1: trend_box(tile_bullet(leads_ts, "Leads index", ACCENT_BLUE))
+        with s2: trend_box(tile_bullet(conv_ts,  "Conversion index", ACCENT_GREEN))
+        with s3: trend_box(tile_bullet(meet_ts,  "Meetings index", PRIMARY_GOLD))
 
     st.markdown("---")
     st.subheader("Lead conversion snapshot")
@@ -584,7 +613,7 @@ def show_lead_status(d):
     with c1:
         fig = px.pie(counts, names="Status", values="count", hole=0.35, color_discrete_sequence=px.colors.sequential.Viridis,
                      title="Lead Status Share")
-        fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white")
+        fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color=TEXT_MAIN)
         st.plotly_chart(fig, use_container_width=True)
     with c2:
         st.metric("Total Leads", f"{len(L):,}")
@@ -601,8 +630,9 @@ def show_lead_status(d):
     fig_bar = px.bar(dist_sorted, x="Status", y="count", title="Leads by status",
                      color="Status", color_discrete_sequence=px.colors.qualitative.Set3, text="count")
     fig_bar.update_traces(textposition='outside', textfont_size=12)
-    fig_bar.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white", height=400,
-                          showlegend=False, margin=dict(l=0,r=0,t=40,b=0), xaxis_title="Status", yaxis_title="Count")
+    fig_bar.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                          font_color=TEXT_MAIN, height=400, showlegend=False,
+                          margin=dict(l=0,r=0,t=40,b=0), xaxis_title="Status", yaxis_title="Count")
     st.plotly_chart(fig_bar, use_container_width=True)
 
     st.markdown("---")
@@ -676,10 +706,10 @@ if HAS_OPTION_MENU:
         None, [n[0] for n in NAV], icons=[n[1] for n in NAV],
         orientation="horizontal", default_index=0,
         styles={
-            "container": {"padding":"0!important","background-color": EXEC_BG},
-            "icon": {"color": EXEC_PRIMARY, "font-size": "16px"},
-            "nav-link": {"font-size": "14px", "color": "#d0d0d0", "--hover-color": "#21252b"},
-            "nav-link-selected": {"background-color": EXEC_SURFACE}
+            "container": {"padding":"0!important","background-color": BG_PAGE},
+            "icon": {"color": PRIMARY_GOLD, "font-size": "16px"},
+            "nav-link": {"font-size": "14px", "color": TEXT_MUTED, "--hover-color": "#EEF2FF"},
+            "nav-link-selected": {"background-color": BG_SURFACE, "color": TEXT_MAIN, "border-bottom": f"2px solid {PRIMARY_GOLD}"},
         }
     )
     if selected == "Executive":
