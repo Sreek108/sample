@@ -24,7 +24,7 @@ EXEC_DANGER  = "#DC143C"
 EXEC_BG      = "#0f1116"
 EXEC_SURFACE = "#1c1f26"
 
-# Global styles: KPI panes + Trend borders (ALL CSS braces are doubled inside f-string)
+# Global styles: KPI panes (use native bordered containers for trends)
 st.markdown(f"""
 <style>
 :root {{
@@ -64,16 +64,6 @@ st.markdown(f"""
   font-size: 1.6rem; font-weight: 700; color: #ffffff; line-height: 1.1;
 }}
 
-/* Trend tiles bordered boxes */
-.trend-box {{
-  border: 1.5px solid rgba(255,255,255,0.22);
-  border-radius: 12px;
-  background: rgba(255,255,255,0.03);
-  padding: 10px;
-  box-shadow: 0 4px 10px rgba(0,0,0,.15);
-  min-height: 210px;
-}}
-
 h3, h4 {{ margin-top: .25rem; }}
 </style>
 """, unsafe_allow_html=True)
@@ -102,11 +92,10 @@ def render_kpi_group(title: str, total_leads: int, conv_rate_pct: float, meeting
     """
     st.markdown(html, unsafe_allow_html=True)
 
-# Utility: surround a chart in a bordered trend box
+# Utility: bordered trend tile using Streamlit native container (works reliably)
 def trend_box(fig):
-    st.markdown('<div class="trend-box">', unsafe_allow_html=True)
-    st.plotly_chart(fig, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        st.plotly_chart(fig, use_container_width=True)
 
 # Utility to normalize column names
 def norm(df):
@@ -353,7 +342,7 @@ def render_funnel_and_markets(d):
     else:
         st.info("Country data unavailable to build Top markets.")
 
-# Executive summary with KPI panes and bordered trend tiles
+# Executive summary with KPI panes and native bordered trend tiles
 def show_executive_summary(d):
     all_leads     = data.get("leads")
     lead_statuses = d.get("lead_statuses")
