@@ -18,6 +18,7 @@ st.set_page_config(page_title="DAR Global - Executive Dashboard", layout="wide",
 EXEC_PRIMARY = "#DAA520"
 EXEC_BLUE = "#1E90FF"
 EXEC_GREEN = "#32CD32"
+EXEC_AMBER = "#F59E0B"
 EXEC_DANGER = "#DC143C"
 EXEC_BG = "#1a1a1a"
 EXEC_SURFACE = "#2d2d2d"
@@ -30,23 +31,55 @@ st.markdown(f"""
   --exec-primary: {EXEC_PRIMARY};
   --exec-blue: {EXEC_BLUE};
   --exec-green: {EXEC_GREEN};
+  --exec-amber: {EXEC_AMBER};
 }}
-.main-header {{
-    background: linear-gradient(135deg, {EXEC_BG} 0%, {EXEC_SURFACE} 100%);
-    color: {EXEC_PRIMARY}; padding: 24px; border-radius: 12px; border: 2px solid {EXEC_PRIMARY};
-    text-align: center; box-shadow: 0 8px 16px rgba(0,0,0,.35);
-}}
-.main-header h1 {{ color: {EXEC_PRIMARY}; margin: 0 0 6px 0; }}
-.main-header h3 {{ color: {EXEC_BLUE}; margin: 4px 0 0 0; }}
+/* Legacy metric styling (kept if used elsewhere) */
 div[data-testid="metric-container"] {{
-    background: linear-gradient(135deg, {EXEC_SURFACE} 0%, {EXEC_BG} 100%);
-    border: 2px solid {EXEC_PRIMARY}; padding: .75rem; border-radius: 10px; color: white;
+  background: linear-gradient(135deg, {EXEC_SURFACE} 0%, {EXEC_BG} 100%);
+  border: 2px solid {EXEC_PRIMARY}; padding: .75rem; border-radius: 10px; color: white;
 }}
-[data-testid="stSidebar"] {{
-    display: none;
+/* Hide sidebar */
+[data-testid="stSidebar"] {{ display: none; }}
+
+/* KPI card styles */
+.kpi-card {{
+  border: 2px solid var(--kpi-border, {EXEC_PRIMARY});
+  border-radius: 14px;
+  background: rgba(255,255,255,0.03);
+  padding: 14px 16px;
+  height: 100%;
+  display: flex; flex-direction: column; gap: 6px;
+  box-shadow: 0 6px 14px rgba(0,0,0,.18);
 }}
+.kpi-title {{
+  font-size: .80rem; letter-spacing: .02em; color: #cbd5e1; text-transform: uppercase;
+}}
+.kpi-value {{
+  font-size: 2rem; font-weight: 700; color: #ffffff; line-height: 1.15;
+}}
+.kpi-caption {{
+  font-size: .78rem; color: #a3a3a3;
+}}
+
+/* Section headers tidy spacing */
+h3, h4 {{ margin-top: .3rem; }}
 </style>
 """, unsafe_allow_html=True)
+
+# Utility: KPI card helper
+def kpi_card(title: str, value, border_color: str = EXEC_PRIMARY, caption: str | None = None):
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        v = f"{value:,}"
+    else:
+        v = str(value)
+    html = f"""
+    <div class="kpi-card" style="--kpi-border:{border_color}">
+      <div class="kpi-title">{title}</div>
+      <div class="kpi-value">{v}</div>
+      {f'<div class="kpi-caption">{caption}</div>' if caption else ''}
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
 
 # Utility to normalize column names
 def norm(df):
@@ -281,16 +314,16 @@ def render_funnel_and_markets(d):
             top5[["Country", "Leads", "Share"]],
             use_container_width=True,
             hide_index=True,
-            column_config={
+            column_config={{
                 "Share": st.column_config.ProgressColumn(
                     "Share", format="%.1f%%", min_value=0, max_value=100
                 )
-            },
+            }},
         )
     else:
         st.info("Country data unavailable to build Top markets.")
 
-# Executive Summary with Date Slicer (3 columns only)
+# Executive Summary with Date Slicer (3 columns only) + KPI cards
 def show_executive_summary(d):
     all_leads = data.get("leads")
     lead_statuses = d.get("lead_statuses")
@@ -346,7 +379,6 @@ def show_executive_summary(d):
     cols = st.columns(3)
     all_meetings = data.get("agent_meeting_assignment")
 
-    # Only Week, Month, Year (removed Selected Range)
     periods = [
         ("Week to Date", week_start, today),
         ("Month to Date", month_start, today),
@@ -383,12 +415,14 @@ def show_executive_summary(d):
         
         with col:
             st.markdown(f"#### {label}")
-            st.markdown("**Total Leads**")
-            st.markdown(f"<span style='font-size:2rem;'>{total_leads_p:,}</span>", unsafe_allow_html=True)
-            st.markdown("**Conversion Rate**")
-            st.markdown(f"<span style='font-size:2rem;'>{conv_rate_p:.1f}%</span>", unsafe_allow_html=True)
-            st.markdown("**Meetings Scheduled**")
-            st.markdown(f"<span style='font-size:2rem;'>{meetings_scheduled:,}</span>", unsafe_allow_html=True)
+            # KPI tiles row
+            c1, c2, c3 = st.columns([1,1,1])
+            with c1:
+                kpi_card("Total Leads", total_leads_p, border_color=EXEC_BLUE)
+            with c2:
+                kpi_card("Conversion Rate", f"{conv_rate_p:.1f}%", border_color=EXEC_GREEN)
+            with c3:
+                kpi_card("Meetings Scheduled", meetings_scheduled, border_color=EXEC_AMBER)
 
     # Trend at a glance
     leads = filtered_leads.copy()
@@ -554,7 +588,7 @@ def show_executive_summary(d):
     d_filtered["leads"] = filtered_leads
     render_funnel_and_markets(d_filtered)
 
-# Lead Status with VERTICAL bar chart (removed status mix by period)
+# Lead Status with VERTICAL bar chart (status mix by period removed)
 def show_lead_status(d):
     leads = d.get("leads")
     statuses = d.get("lead_statuses")
@@ -664,14 +698,14 @@ def show_lead_status(d):
     st.dataframe(
         breakdown[["Status", "Leads", "Share_%", "Avg_Age_Days", "Meeting_Rate_%", "connect_rate", "Pipeline"]],
         use_container_width=True, hide_index=True,
-        column_config={
+        column_config={{
             "Leads": st.column_config.NumberColumn("Leads", format="%,d"),
             "Share_%": st.column_config.ProgressColumn("Share", min_value=0.0, max_value=100.0, format="%.1f%%"),
             "Avg_Age_Days": st.column_config.NumberColumn("Avg age (days)", format="%.1f"),
             "Meeting_Rate_%": st.column_config.ProgressColumn("Meeting rate", min_value=0.0, max_value=100.0, format="%.1f%%"),
             "connect_rate": st.column_config.ProgressColumn("Connect rate", min_value=0.0, max_value=1.0, format="%.2f"),
             "Pipeline": st.column_config.NumberColumn("Pipeline", format="%.0f"),
-        }
+        }}
     )
 
 # Create a simple filtered dataset for navigation
@@ -692,12 +726,12 @@ if HAS_OPTION_MENU:
         icons=[n[1] for n in NAV],
         orientation="horizontal",
         default_index=0,
-        styles={
+        styles={{
             "container": {"padding": "0!important", "background-color": "#0f1116"},
             "icon": {"color": EXEC_PRIMARY, "font-size": "16px"},
             "nav-link": {"font-size": "14px", "color": "#d0d0d0", "--hover-color": "#21252b"},
             "nav-link-selected": {"background-color": EXEC_SURFACE}
-        }
+        }}
     )
     if selected == "Executive":
         show_executive_summary(fdata)
