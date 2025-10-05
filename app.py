@@ -24,7 +24,7 @@ EXEC_DANGER  = "#DC143C"
 EXEC_BG      = "#0f1116"
 EXEC_SURFACE = "#1c1f26"
 
-# Global styles: KPI panes + Trend borders
+# Global styles: KPI panes + Trend borders (ALL CSS braces are doubled inside f-string)
 st.markdown(f"""
 <style>
 :root {{
@@ -65,14 +65,14 @@ st.markdown(f"""
 }}
 
 /* Trend tiles bordered boxes */
-.trend-box{
+.trend-box {{
   border: 1.5px solid rgba(255,255,255,0.22);
   border-radius: 12px;
   background: rgba(255,255,255,0.03);
   padding: 10px;
   box-shadow: 0 4px 10px rgba(0,0,0,.15);
   min-height: 210px;
-}
+}}
 
 h3, h4 {{ margin-top: .25rem; }}
 </style>
@@ -129,7 +129,7 @@ def load_data(_=None):
     except Exception:
         conn = None
 
-    # 2) Fallback to SQLAlchemy using provided creds (user supplied)
+    # 2) Fallback to SQLAlchemy using provided creds
     engine = None
     run_sql = None
     if conn is None:
