@@ -33,36 +33,42 @@ st.markdown(f"""
   --exec-green: {EXEC_GREEN};
   --exec-amber: {EXEC_AMBER};
 }}
-/* Legacy metric styling (kept if used elsewhere) */
-div[data-testid="metric-container"] {{
-  background: linear-gradient(135deg, {EXEC_SURFACE} 0%, {EXEC_BG} 100%);
-  border: 2px solid {EXEC_PRIMARY}; padding: .75rem; border-radius: 10px; color: white;
-}}
 /* Hide sidebar */
 [data-testid="stSidebar"] {{ display: none; }}
 
-/* KPI card styles */
+/* KPI card styles — fixed and equal size */
 .kpi-card {{
   border: 2px solid var(--kpi-border, {EXEC_PRIMARY});
   border-radius: 14px;
   background: rgba(255,255,255,0.03);
   padding: 14px 16px;
-  height: 100%;
-  display: flex; flex-direction: column; gap: 6px;
+  height: 120px;             /* fixed height for consistency */
+  width: 100%;               /* fill its column */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;   /* vertical centering */
+  gap: 6px;
   box-shadow: 0 6px 14px rgba(0,0,0,.18);
 }}
 .kpi-title {{
-  font-size: .80rem; letter-spacing: .02em; color: #cbd5e1; text-transform: uppercase;
+  font-size: .80rem;
+  letter-spacing: .02em;
+  color: #cbd5e1;
+  text-transform: uppercase;
+  white-space: nowrap;       /* keep on one line to avoid height changes */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }}
 .kpi-value {{
-  font-size: 2rem; font-weight: 700; color: #ffffff; line-height: 1.15;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.15;
 }}
 .kpi-caption {{
-  font-size: .78rem; color: #a3a3a3;
+  font-size: .78rem;
+  color: #a3a3a3;
 }}
-
-/* Section headers tidy spacing */
-h3, h4 {{ margin-top: .3rem; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -314,16 +320,16 @@ def render_funnel_and_markets(d):
             top5[["Country", "Leads", "Share"]],
             use_container_width=True,
             hide_index=True,
-            column_config={{
+            column_config={
                 "Share": st.column_config.ProgressColumn(
                     "Share", format="%.1f%%", min_value=0, max_value=100
                 )
-            }},
+            },
         )
     else:
         st.info("Country data unavailable to build Top markets.")
 
-# Executive Summary with Date Slicer (3 columns only) + KPI cards
+# Executive Summary with Date Slicer (3 columns only) + KPI cards (equal size)
 def show_executive_summary(d):
     all_leads = data.get("leads")
     lead_statuses = d.get("lead_statuses")
@@ -375,7 +381,6 @@ def show_executive_summary(d):
     month_start = today.replace(day=1)
     year_start = today.replace(month=1, day=1)
 
-    # 3 columns only (removed Selected Range)
     cols = st.columns(3)
     all_meetings = data.get("agent_meeting_assignment")
 
@@ -415,8 +420,8 @@ def show_executive_summary(d):
         
         with col:
             st.markdown(f"#### {label}")
-            # KPI tiles row
-            c1, c2, c3 = st.columns([1,1,1])
+            # three equal columns; card width 100% and fixed height in CSS keeps all the same size
+            c1, c2, c3 = st.columns(3)
             with c1:
                 kpi_card("Total Leads", total_leads_p, border_color=EXEC_BLUE)
             with c2:
@@ -698,14 +703,14 @@ def show_lead_status(d):
     st.dataframe(
         breakdown[["Status", "Leads", "Share_%", "Avg_Age_Days", "Meeting_Rate_%", "connect_rate", "Pipeline"]],
         use_container_width=True, hide_index=True,
-        column_config={{
+        column_config={
             "Leads": st.column_config.NumberColumn("Leads", format="%,d"),
             "Share_%": st.column_config.ProgressColumn("Share", min_value=0.0, max_value=100.0, format="%.1f%%"),
             "Avg_Age_Days": st.column_config.NumberColumn("Avg age (days)", format="%.1f"),
             "Meeting_Rate_%": st.column_config.ProgressColumn("Meeting rate", min_value=0.0, max_value=100.0, format="%.1f%%"),
             "connect_rate": st.column_config.ProgressColumn("Connect rate", min_value=0.0, max_value=1.0, format="%.2f"),
             "Pipeline": st.column_config.NumberColumn("Pipeline", format="%.0f"),
-        }}
+        }
     )
 
 # Create a simple filtered dataset for navigation
@@ -726,12 +731,12 @@ if HAS_OPTION_MENU:
         icons=[n[1] for n in NAV],
         orientation="horizontal",
         default_index=0,
-        styles={{
+        styles={
             "container": {"padding": "0!important", "background-color": "#0f1116"},
             "icon": {"color": EXEC_PRIMARY, "font-size": "16px"},
             "nav-link": {"font-size": "14px", "color": "#d0d0d0", "--hover-color": "#21252b"},
             "nav-link-selected": {"background-color": EXEC_SURFACE}
-        }}
+        }
     )
     if selected == "Executive":
         show_executive_summary(fdata)
