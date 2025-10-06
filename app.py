@@ -319,6 +319,8 @@ def render_funnel_and_markets(d):
         st.info("Leads data unavailable.")
         return
 
+    total_leads = len(leads)
+
     # Use LeadStageAudit for funnel (unique leads per stage)
     if audit is not None and stages is not None and "StageId" in audit.columns:
         funnel_query = audit.merge(
@@ -333,14 +335,15 @@ def render_funnel_and_markets(d):
             funnel_query.groupby(["SortOrder", "StageName_E"])["LeadId"]
             .nunique()
             .reset_index(name="Count")
-            .sort_values("SortOrder")
+            .sort_values("SortOrder", ascending=True)  # Ascending order for proper funnel
         )
         
-        # Rename stages to match your requirements
+        # Map stage names to your requirements
         stage_rename = {
             "New": "New",
             "Qualified": "Qualified",
-            "Followup Process": "Meeting Scheduled",
+            "Followup Process": "Followup Process",
+            "Meeting Scheduled": "Meeting Scheduled",
             "Negotiation": "Negotiation",
             "Won": "Won",
             "Lost": "Lost"
@@ -348,44 +351,43 @@ def render_funnel_and_markets(d):
         
         funnel_df["Stage"] = funnel_df["StageName_E"].map(stage_rename).fillna(funnel_df["StageName_E"])
         
-        # Reverse order for funnel display (New at top)
-        funnel_df = funnel_df.sort_values("SortOrder", ascending=False)
+        # Remove Lost from main funnel (show separately if needed)
+        funnel_df = funnel_df[funnel_df["Stage"] != "Lost"]
         
     else:
-        # Fallback to old logic if audit table unavailable
-        st.info("Using fallback funnel logic (LeadStageAudit unavailable)")
-        total_leads = len(leads)
+        # Fallback if audit table unavailable
+        st.info("LeadStageAudit unavailable - showing basic funnel")
         funnel_df = pd.DataFrame([
-            {"Stage": "New", "Count": total_leads},
+            {"Stage": "New", "Count": total_leads, "SortOrder": 1},
         ])
 
-    # Create funnel chart
-    fig = px.funnel(
-        funnel_df, 
-        x="Count", 
-        y="Stage",
-        color_discrete_sequence=["#3498db", "#2ecc71", "#f39c12", "#e74c3c", "#9b59b6", "#95a5a6"]
-    )
-    
-    fig.update_traces(
-        textposition="inside", 
-        textfont_color="white", 
-        textfont_size=16, 
-        textinfo="value+percent initial"
-    )
+    # Create funnel chart with proper order
+    fig = go.Figure(go.Funnel(
+        name='Sales Funnel',
+        y=funnel_df['Stage'],
+        x=funnel_df['Count'],
+        textposition="inside",
+        textinfo="value+percent initial",
+        textfont=dict(color="white", size=16, family="Inter"),
+        marker={
+            "color": ["#3498db", "#2ecc71", "#f39c12", "#e74c3c", "#9b59b6"],
+            "line": {"width": 2, "color": "white"}
+        },
+        connector={"line": {"color": "#34495e", "width": 3}}
+    ))
     
     fig.update_layout(
         height=500, 
-        margin=dict(l=0, r=0, t=30, b=10),
+        margin=dict(l=0, r=0, t=50, b=10),
         plot_bgcolor="rgba(0,0,0,0)", 
         paper_bgcolor="rgba(0,0,0,0)",
         font_color=TEXT_MAIN, 
         font_family="Inter",
         title={
-            'text': f"Sales Funnel - From {len(leads):,} Total Leads",
+            'text': f"Sales Funnel - From {total_leads:,} Total Leads",
             'x': 0.5,
             'xanchor': 'center',
-            'font': {'size': 18, 'color': TEXT_MAIN}
+            'font': {'size': 18, 'color': TEXT_MAIN, 'family': 'Inter'}
         }
     )
     
