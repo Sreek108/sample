@@ -56,21 +56,17 @@ h1, h2, h3, h4, h5, h6, label, p, span, div, .st-emotion-cache-10trblm {{
   color: var(--text-main);
 }}
 
-/* KPI Metric Cards */
+/* KPI Metric Cards - No Borders */
 .metric-card {{
-    background: white;
+    background: transparent;
     padding: 20px 16px;
-    border-radius: 8px;
-    border: 1px solid #E5E7EB;
+    border-radius: 0px;
+    border: none;
     text-align: center;
     min-height: 110px;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    transition: box-shadow 0.2s;
-}}
-.metric-card:hover {{
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }}
 .metric-label {{
     font-size: 0.875rem;
