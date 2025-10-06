@@ -344,7 +344,6 @@ def render_funnel_and_markets(d):
         category_orders={"Stage":stage_order},
         color_discrete_sequence=[ACCENT_RED,"#34D399","#F59E0B",PRIMARY_GOLD,ACCENT_GREEN,ACCENT_BLUE]
     )
-    # Light theme text
     fig.update_traces(textposition="inside", textfont_color=TEXT_MAIN, textfont_size=16, textinfo="value")
     fig.update_layout(
         height=450, margin=dict(l=0,r=0,t=10,b=10),
@@ -370,7 +369,7 @@ def render_funnel_and_markets(d):
     else:
         st.info("Country data unavailable to build Top markets.")
 
-# Executive summary with KPI panes and bordered trend tiles (date fixes applied)
+# Executive summary with WTD/MTD/YTD using full dataset, trends/funnel using date filter
 def show_executive_summary(d):
     leads_all = d.get("leads")
     lead_statuses = d.get("lead_statuses")
@@ -409,35 +408,19 @@ def show_executive_summary(d):
 
     st.markdown("---")
 
-    # Normalize endpoints and filter once for downstream visuals
-    start_day = pd.Timestamp(date_from)
-    end_day = pd.Timestamp(date_to)
-    if "CreatedOn" in leads_all.columns:
-        created = pd.to_datetime(leads_all["CreatedOn"], errors="coerce")
-        filtered_leads = leads_all.loc[(created.dt.date >= start_day.date()) & (created.dt.date <= end_day.date())].copy()
-    else:
-        filtered_leads = leads_all.copy()
-
-    # Helper to clamp a period start to the selected From Date
-    def clamp_start(period_start):
-        return max(pd.Timestamp(period_start), start_day)
-
-    # Compute period anchors based on To Date (not system today)
-    week_start_raw = end_day - pd.Timedelta(days=end_day.weekday())
-    month_start_raw = end_day.replace(day=1)
-    year_start_raw = end_day.replace(month=1, day=1)
-
-    week_start = clamp_start(week_start_raw)
-    month_start = clamp_start(month_start_raw)
-    year_start = clamp_start(year_start_raw)
+    # WTD/MTD/YTD use the full dataset and current system date
+    today = pd.Timestamp.today().normalize()
+    week_start_wtd = today - pd.Timedelta(days=today.weekday())
+    month_start_mtd = today.replace(day=1)
+    year_start_ytd = today.replace(month=1, day=1)
 
     meetings_all = d.get("agent_meeting_assignment")
 
-    def metrics_between(start_ts: pd.Timestamp, end_ts: pd.Timestamp):
-        # Leads in period
-        if "CreatedOn" in filtered_leads.columns:
-            dt = pd.to_datetime(filtered_leads["CreatedOn"], errors="coerce")
-            lp = filtered_leads.loc[(dt >= start_ts) & (dt <= end_ts)].copy()
+    def metrics_full_dataset(start_ts: pd.Timestamp, end_ts: pd.Timestamp):
+        """Compute metrics from the FULL dataset for WTD/MTD/YTD"""
+        if "CreatedOn" in leads_all.columns:
+            dt = pd.to_datetime(leads_all["CreatedOn"], errors="coerce")
+            lp = leads_all.loc[(dt >= start_ts) & (dt <= end_ts)].copy()
         else:
             lp = pd.DataFrame()
 
@@ -463,22 +446,31 @@ def show_executive_summary(d):
         meet = int(mp["leadid"].nunique()) if "leadid" in mp.columns and len(mp) > 0 else 0
         return total, conv, meet
 
-    # Three panes anchored to To Date and clamped to From Date
+    # Three panes using full dataset and today
     g1, g2, g3 = st.columns(3)
     with g1:
-        t, c, m = metrics_between(week_start, end_day)
+        t, c, m = metrics_full_dataset(week_start_wtd, today)
         render_kpi_group("Week To Date", t, c, m, accent=ACCENT_BLUE)
     with g2:
-        t, c, m = metrics_between(month_start, end_day)
+        t, c, m = metrics_full_dataset(month_start_mtd, today)
         render_kpi_group("Month To Date", t, c, m, accent=ACCENT_GREEN)
     with g3:
-        t, c, m = metrics_between(year_start, end_day)
+        t, c, m = metrics_full_dataset(year_start_ytd, today)
         render_kpi_group("Year To Date", t, c, m, accent=ACCENT_AMBER)
 
-    # Trend at a glance (light layout)
+    # Trend charts and funnel use the user-selected date range
     st.markdown("---")
     st.subheader("Trend at a glance")
     trend_style = st.radio("Trend style", ["Line","Bars","Bullet"], index=0, horizontal=True, key="__trend_style_exec")
+
+    # Filter by user-selected date range for trends/funnel
+    start_day = pd.Timestamp(date_from)
+    end_day = pd.Timestamp(date_to)
+    if "CreatedOn" in leads_all.columns:
+        created = pd.to_datetime(leads_all["CreatedOn"], errors="coerce")
+        filtered_leads = leads_all.loc[(created.dt.date >= start_day.date()) & (created.dt.date <= end_day.date())].copy()
+    else:
+        filtered_leads = leads_all.copy()
 
     leads_local = filtered_leads.copy()
     if "period" not in leads_local.columns and "CreatedOn" in leads_local.columns:
@@ -681,7 +673,7 @@ def show_lead_status(d):
     fig_bar.update_traces(
         textposition='outside',
         textfont_size=12,
-        marker_line=dict(color="rgba(255,255,255,0.6)", width=0.5)  # light outline for pop
+        marker_line=dict(color="rgba(255,255,255,0.6)", width=0.5)
     )
     fig_bar.update_layout(
         plot_bgcolor="rgba(0,0,0,0)",
