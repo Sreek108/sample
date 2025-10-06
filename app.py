@@ -180,7 +180,7 @@ def load_lookup_tables(_conn, _runner):
             WHERE IsActive = 1
         """),
         "lead_stages": q("""
-            SELECT LeadStageId, StageName_E 
+            SELECT LeadStageId, StageName_E, SortOrder 
             FROM dbo.LeadStage 
             WHERE IsActive = 1
         """),
@@ -227,10 +227,18 @@ def load_transactional_data(_conn, _runner):
         FROM dbo.LeadCallRecord
     """)
     
+    # NEW: Load LeadStageAudit for funnel
+    stage_audit = q("""
+        SELECT 
+            AuditId, LeadId, StageId, CreatedOn
+        FROM dbo.LeadStageAudit
+    """)
+    
     return {
         "leads": leads,
         "agent_meeting_assignment": meetings,
         "calls": calls,
+        "lead_stage_audit": stage_audit,
     }
 
 # Initialize connection
@@ -276,75 +284,114 @@ for key in data:
             })
             df["CallDateTime"] = pd.to_datetime(df["CallDateTime"], errors="coerce")
             
+        elif key == "lead_stage_audit":
+            df = df.rename(columns={
+                "auditid": "AuditId", "leadid": "LeadId",
+                "stageid": "StageId", "createdon": "CreatedOn"
+            })
+            df["CreatedOn"] = pd.to_datetime(df["CreatedOn"], errors="coerce")
+            
         elif key == "countries":
             df = df.rename(columns={"countryid": "CountryId", "countryname_e": "CountryName_E"})
             
         elif key == "lead_statuses":
             df = df.rename(columns={"leadstatusid": "LeadStatusId", "statusname_e": "StatusName_E"})
         
+        elif key == "lead_stages":
+            df = df.rename(columns={
+                "leadstageid": "LeadStageId", 
+                "stagename_e": "StageName_E",
+                "sortorder": "SortOrder"
+            })
+        
         data[key] = df
 
 grain = "Month"
 
-# Funnel and markets
+# Funnel and markets - UPDATED TO USE LeadStageAudit
 def render_funnel_and_markets(d):
-    stage_order = ["Lost","Won","Negotiation","Meeting Scheduled","Interested","New"]
     leads      = d.get("leads")
-    statuses   = d.get("lead_statuses")
-    ama        = d.get("agent_meeting_assignment")
+    stages     = d.get("lead_stages")
+    audit      = d.get("lead_stage_audit")
     countries  = d.get("countries")
 
     if leads is None or "LeadId" not in leads.columns:
         st.info("Leads data unavailable.")
         return
 
-    def ids_from(names):
-        if statuses is None or "StatusName_E" not in statuses.columns:
-            return set()
-        return set(statuses.loc[
-            statuses["StatusName_E"].str.lower().isin([n.lower() for n in names]),
-            "LeadStatusId"
-        ].dropna().astype(int).unique())
+    # Use LeadStageAudit for funnel (unique leads per stage)
+    if audit is not None and stages is not None and "StageId" in audit.columns:
+        funnel_query = audit.merge(
+            stages[["LeadStageId", "StageName_E", "SortOrder"]],
+            left_on="StageId",
+            right_on="LeadStageId",
+            how="left"
+        )
+        
+        # Get unique leads per stage
+        funnel_df = (
+            funnel_query.groupby(["SortOrder", "StageName_E"])["LeadId"]
+            .nunique()
+            .reset_index(name="Count")
+            .sort_values("SortOrder")
+        )
+        
+        # Rename stages to match your requirements
+        stage_rename = {
+            "New": "New",
+            "Qualified": "Qualified",
+            "Followup Process": "Meeting Scheduled",
+            "Negotiation": "Negotiation",
+            "Won": "Won",
+            "Lost": "Lost"
+        }
+        
+        funnel_df["Stage"] = funnel_df["StageName_E"].map(stage_rename).fillna(funnel_df["StageName_E"])
+        
+        # Reverse order for funnel display (New at top)
+        funnel_df = funnel_df.sort_values("SortOrder", ascending=False)
+        
+    else:
+        # Fallback to old logic if audit table unavailable
+        st.info("Using fallback funnel logic (LeadStageAudit unavailable)")
+        total_leads = len(leads)
+        funnel_df = pd.DataFrame([
+            {"Stage": "New", "Count": total_leads},
+        ])
 
-    interested_ids  = ids_from(["Interested","Qualified","Hot","Warm"])
-    negotiation_ids = ids_from(["Negotiation","On Hold","Awaiting Budget","Proposal Sent"])
-    won_ids         = ids_from(["Won","Closed Won","Contract Signed"])
-    lost_ids        = ids_from(["Lost","Closed Lost","Dead","Not Interested"])
-
-    total_leads = len(leads)
-    interested_count  = len(leads[leads["LeadStatusId"].isin(interested_ids | negotiation_ids | won_ids)])
-
-    meeting_ids = set()
-    if ama is not None and "LeadId" in ama.columns:
-        meeting_ids = set(ama.loc[ama["MeetingStatusId"].isin({1,6}), "LeadId"].dropna().astype(int).unique())
-
-    meeting_count      = len(leads[(leads["LeadId"].isin(meeting_ids)) | (leads["LeadStatusId"].isin(negotiation_ids | won_ids))])
-    negotiation_count  = len(leads[leads["LeadStatusId"].isin(negotiation_ids | won_ids)])
-    won_count          = len(leads[leads["LeadStatusId"].isin(won_ids)])
-    lost_count         = len(leads[leads["LeadStatusId"].isin(lost_ids)])
-
-    funnel_df = pd.DataFrame([
-        {"Stage":"Lost","Count":max(lost_count,1)},
-        {"Stage":"Won","Count":max(won_count,1)},
-        {"Stage":"Negotiation","Count":max(negotiation_count,1)},
-        {"Stage":"Meeting Scheduled","Count":max(meeting_count,1)},
-        {"Stage":"Interested","Count":max(interested_count,1)},
-        {"Stage":"New","Count":total_leads},
-    ])
-
+    # Create funnel chart
     fig = px.funnel(
-        funnel_df, x="Count", y="Stage",
-        category_orders={"Stage":stage_order},
-        color_discrete_sequence=[ACCENT_RED,"#34D399","#F59E0B",PRIMARY_GOLD,ACCENT_GREEN,ACCENT_BLUE]
+        funnel_df, 
+        x="Count", 
+        y="Stage",
+        color_discrete_sequence=["#3498db", "#2ecc71", "#f39c12", "#e74c3c", "#9b59b6", "#95a5a6"]
     )
-    fig.update_traces(textposition="inside", textfont_color=TEXT_MAIN, textfont_size=16, textinfo="value")
+    
+    fig.update_traces(
+        textposition="inside", 
+        textfont_color="white", 
+        textfont_size=16, 
+        textinfo="value+percent initial"
+    )
+    
     fig.update_layout(
-        height=450, margin=dict(l=0,r=0,t=10,b=10),
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        font_color=TEXT_MAIN, font_family="Inter"
+        height=500, 
+        margin=dict(l=0, r=0, t=30, b=10),
+        plot_bgcolor="rgba(0,0,0,0)", 
+        paper_bgcolor="rgba(0,0,0,0)",
+        font_color=TEXT_MAIN, 
+        font_family="Inter",
+        title={
+            'text': f"Sales Funnel - From {len(leads):,} Total Leads",
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 18, 'color': TEXT_MAIN}
+        }
     )
+    
     st.plotly_chart(fig, use_container_width=True)
 
+    # Top markets
     if countries is not None and "CountryId" in leads.columns and "CountryName_E" in countries.columns:
         bycountry = (
             leads.groupby("CountryId", dropna=True).size().reset_index(name="Leads")
