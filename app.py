@@ -384,7 +384,7 @@ def render_funnel_and_markets(d):
         font_color=TEXT_MAIN, 
         font_family="Inter",
         title={
-            'text': f"Sales Funnel - From {total_leads:,} Total Leads",
+            'text': f"",
             'x': 0.5,
             'xanchor': 'center',
             'font': {'size': 18, 'color': TEXT_MAIN, 'family': 'Inter'}
