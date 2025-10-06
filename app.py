@@ -52,65 +52,50 @@ section.main > div.block-container {{
 
 [data-testid="stSidebar"] {{ display: none; }}
 
-.kpi-pane {{
-  position: relative;
-  border: 1px solid var(--border-col);
-  border-radius: 12px;
-  background: var(--bg-surface);
-  padding: 14px 16px 12px 16px;
-  height: 150px;
-  display: flex; flex-direction: column; justify-content: space-between;
-}}
-.kpi-pane::before {{
-  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
-  background: var(--accent, #3B82F6);
-  border-top-left-radius: 12px; border-top-right-radius: 12px;
-}}
-.kpi-title {{
-  margin: 2px 0 10px 0; font-size: 1.05rem; font-weight: 700; color: var(--text-main);
-}}
-.kpi-row {{
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; align-items: center;
-}}
-.kpi-cell {{ text-align: center; padding: 6px 8px; }}
-.kpi-cell + .kpi-cell {{ border-left: 1px solid var(--divider-col); }}
-.kpi-label {{
-  font-size: .80rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px;
-}}
-.kpi-value {{
-  font-size: 1.6rem; font-weight: 700; color: var(--text-main); line-height: 1.1;
-}}
-
 h1, h2, h3, h4, h5, h6, label, p, span, div, .st-emotion-cache-10trblm {{
   color: var(--text-main);
+}}
+
+/* KPI Metric Cards */
+.metric-card {{
+    background: white;
+    padding: 20px 16px;
+    border-radius: 8px;
+    border: 1px solid #E5E7EB;
+    text-align: center;
+    min-height: 110px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    transition: box-shadow 0.2s;
+}}
+.metric-card:hover {{
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}}
+.metric-label {{
+    font-size: 0.875rem;
+    color: #6B7280;
+    font-weight: 500;
+    margin-bottom: 8px;
+    text-transform: capitalize;
+}}
+.metric-value {{
+    font-size: 2rem;
+    font-weight: 700;
+    color: #111827;
+    line-height: 1;
+}}
+.period-header {{
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #374151;
+    margin: 20px 0 12px 0;
+    padding-left: 4px;
 }}
 </style>
 """, unsafe_allow_html=True)
 
 # Utility functions
-def render_kpi_group(title: str, total_leads: int, conv_rate_pct: float, meetings: int, accent: str):
-    conv_txt = f"{conv_rate_pct:.0f}%" if abs(conv_rate_pct - round(conv_rate_pct)) < 1e-9 else f"{conv_rate_pct:.1f}%"
-    html = f"""
-    <div class="kpi-pane" style="--accent:{accent}">
-      <div class="kpi-title">{title}</div>
-      <div class="kpi-row">
-        <div class="kpi-cell">
-          <div class="kpi-label">Total Leads</div>
-          <div class="kpi-value">{total_leads:,}</div>
-        </div>
-        <div class="kpi-cell">
-          <div class="kpi-label">Conversion Rate</div>
-          <div class="kpi-value">{conv_txt}</div>
-        </div>
-        <div class="kpi-cell">
-          <div class="kpi-label">Meeting Scheduled</div>
-          <div class="kpi-value">{meetings:,}</div>
-        </div>
-      </div>
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
-
 def trend_box(fig):
     with st.container(border=True):
         st.plotly_chart(fig, use_container_width=True)
@@ -164,7 +149,7 @@ def get_connection():
         st.error(f"❌ Database connection failed: {e}")
         return None, None
 
-# Optimized data loading with selective columns
+# Optimized data loading
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_lookup_tables(_conn, _runner):
     """Load static reference tables (cached for 1 hour)"""
@@ -211,7 +196,6 @@ def load_transactional_data(_conn, _runner):
             return _conn.query(sql, ttl=60)
         return _runner(sql)
     
-    # Optimized Lead query - only columns we need
     leads = q("""
         SELECT 
             LeadId, LeadCode, LeadStageId, LeadStatusId, LeadScoringId,
@@ -220,7 +204,6 @@ def load_transactional_data(_conn, _runner):
         WHERE IsActive = 1
     """)
     
-    # Optimized Meeting query
     meetings = q("""
         SELECT 
             AssignmentId, LeadId, StartDateTime, EndDateTime, 
@@ -228,7 +211,6 @@ def load_transactional_data(_conn, _runner):
         FROM dbo.AgentMeetingAssignment
     """)
     
-    # Optimized Call query
     calls = q("""
         SELECT 
             LeadCallId, LeadId, CallDateTime, DurationSeconds,
@@ -251,8 +233,6 @@ if conn is None and runner is None:
 # Load data
 lookups = load_lookup_tables(conn, runner)
 transactions = load_transactional_data(conn, runner)
-
-# Merge into single dict
 data = {**lookups, **transactions}
 
 # Normalize all dataframes
@@ -261,57 +241,37 @@ for key in data:
         df = data[key].copy()
         df.columns = df.columns.str.strip().str.lower()
         
-        # Standardize column names
         if key == "leads":
             df = df.rename(columns={
-                "leadid": "LeadId",
-                "leadcode": "LeadCode",
-                "leadstageid": "LeadStageId",
-                "leadstatusid": "LeadStatusId",
-                "leadscoringid": "LeadScoringId",
-                "assignedagentid": "AssignedAgentId",
-                "createdon": "CreatedOn",
-                "isactive": "IsActive",
-                "countryid": "CountryId",
-                "cityregionid": "CityRegionId",
+                "leadid": "LeadId", "leadcode": "LeadCode", "leadstageid": "LeadStageId",
+                "leadstatusid": "LeadStatusId", "leadscoringid": "LeadScoringId",
+                "assignedagentid": "AssignedAgentId", "createdon": "CreatedOn",
+                "isactive": "IsActive", "countryid": "CountryId", "cityregionid": "CityRegionId",
             })
             df["CreatedOn"] = pd.to_datetime(df["CreatedOn"], errors="coerce")
             
         elif key == "agent_meeting_assignment":
             df = df.rename(columns={
-                "assignmentid": "AssignmentId",
-                "leadid": "LeadId",
-                "startdatetime": "StartDateTime",
-                "enddatetime": "EndDateTime",
-                "meetingstatusid": "MeetingStatusId",
-                "agentid": "AgentId",
+                "assignmentid": "AssignmentId", "leadid": "LeadId",
+                "startdatetime": "StartDateTime", "enddatetime": "EndDateTime",
+                "meetingstatusid": "MeetingStatusId", "agentid": "AgentId",
             })
             df["StartDateTime"] = pd.to_datetime(df["StartDateTime"], errors="coerce")
             
         elif key == "calls":
             df = df.rename(columns={
-                "leadcallid": "LeadCallId",
-                "leadid": "LeadId",
-                "calldatetime": "CallDateTime",
-                "durationseconds": "DurationSeconds",
-                "callstatusid": "CallStatusId",
-                "sentimentid": "SentimentId",
-                "assignedagentid": "AssignedAgentId",
-                "calldirection": "CallDirection",
+                "leadcallid": "LeadCallId", "leadid": "LeadId",
+                "calldatetime": "CallDateTime", "durationseconds": "DurationSeconds",
+                "callstatusid": "CallStatusId", "sentimentid": "SentimentId",
+                "assignedagentid": "AssignedAgentId", "calldirection": "CallDirection",
             })
             df["CallDateTime"] = pd.to_datetime(df["CallDateTime"], errors="coerce")
             
         elif key == "countries":
-            df = df.rename(columns={
-                "countryid": "CountryId",
-                "countryname_e": "CountryName_E",
-            })
+            df = df.rename(columns={"countryid": "CountryId", "countryname_e": "CountryName_E"})
             
         elif key == "lead_statuses":
-            df = df.rename(columns={
-                "leadstatusid": "LeadStatusId",
-                "statusname_e": "StatusName_E",
-            })
+            df = df.rename(columns={"leadstatusid": "LeadStatusId", "statusname_e": "StatusName_E"})
         
         data[key] = df
 
@@ -432,7 +392,7 @@ def show_executive_summary(d):
 
     st.markdown("---")
 
-    # WTD/MTD/YTD from full dataset
+    # WTD/MTD/YTD calculations
     today = pd.Timestamp.today().normalize()
     week_start_wtd = today - pd.Timedelta(days=today.weekday())
     month_start_mtd = today.replace(day=1)
@@ -462,20 +422,119 @@ def show_executive_summary(d):
 
         total = int(len(lp))
         won = int((lp.get("LeadStatusId", pd.Series(dtype="Int64")) == won_status_id).sum()) if total else 0
-        conv = (won / total * 100.0) if total else 0.0
+        conv_pct = (won / total * 100.0) if total else 0.0
         meet = int(mp["LeadId"].nunique()) if "LeadId" in mp.columns and len(mp) > 0 else 0
-        return total, conv, meet
+        return total, conv_pct, meet, won
 
-    g1, g2, g3 = st.columns(3)
-    with g1:
-        t, c, m = metrics_full_dataset(week_start_wtd, today)
-        render_kpi_group("Week To Date", t, c, m, accent=ACCENT_BLUE)
-    with g2:
-        t, c, m = metrics_full_dataset(month_start_mtd, today)
-        render_kpi_group("Month To Date", t, c, m, accent=ACCENT_GREEN)
-    with g3:
-        t, c, m = metrics_full_dataset(year_start_ytd, today)
-        render_kpi_group("Year To Date", t, c, m, accent=ACCENT_AMBER)
+    # Get metrics
+    week_total, week_conv, week_meet, week_won = metrics_full_dataset(week_start_wtd, today)
+    month_total, month_conv, month_meet, month_won = metrics_full_dataset(month_start_mtd, today)
+    year_total, year_conv, year_meet, year_won = metrics_full_dataset(year_start_ytd, today)
+
+    # Format large numbers
+    def format_number(num):
+        if num >= 1_000_000:
+            return f"{num/1_000_000:.1f}M"
+        elif num >= 1_000:
+            return f"{num/1_000:.1f}K"
+        else:
+            return f"{num:,}"
+
+    # Week row
+    st.markdown('<div class="period-header">📅 Week To Date</div>', unsafe_allow_html=True)
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Total Leads</div>
+            <div class="metric-value">{format_number(week_total)}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Conversion Rate</div>
+            <div class="metric-value">{week_conv:.1f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col3:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Meeting Scheduled</div>
+            <div class="metric-value">{format_number(week_meet)}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Conversion Count</div>
+            <div class="metric-value">{format_number(week_won)}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Month row
+    st.markdown('<div class="period-header">📅 Month To Date</div>', unsafe_allow_html=True)
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Total Leads</div>
+            <div class="metric-value">{format_number(month_total)}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Conversion Rate</div>
+            <div class="metric-value">{month_conv:.1f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col3:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Meeting Scheduled</div>
+            <div class="metric-value">{format_number(month_meet)}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Conversion Count</div>
+            <div class="metric-value">{format_number(month_won)}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Year row
+    st.markdown('<div class="period-header">📅 Year To Date</div>', unsafe_allow_html=True)
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Total Leads</div>
+            <div class="metric-value">{format_number(year_total)}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Conversion Rate</div>
+            <div class="metric-value">{year_conv:.1f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col3:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Meeting Scheduled</div>
+            <div class="metric-value">{format_number(year_meet)}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Conversion Count</div>
+            <div class="metric-value">{format_number(year_won)}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # Trends
     st.markdown("---")
