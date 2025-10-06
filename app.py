@@ -56,37 +56,38 @@ h1, h2, h3, h4, h5, h6, label, p, span, div, .st-emotion-cache-10trblm {{
   color: var(--text-main);
 }}
 
-/* KPI Metric Cards - No Borders */
+/* KPI Metric Cards - Matching WhatsApp Image Style */
 .metric-card {{
     background: transparent;
-    padding: 20px 16px;
+    padding: 16px 12px;
     border-radius: 0px;
     border: none;
     text-align: center;
-    min-height: 110px;
+    min-height: 100px;
     display: flex;
     flex-direction: column;
     justify-content: center;
 }}
 .metric-label {{
-    font-size: 0.875rem;
-    color: #6B7280;
-    font-weight: 500;
-    margin-bottom: 8px;
-    text-transform: capitalize;
+    font-size: 0.8125rem;
+    color: #9CA3AF;
+    font-weight: 400;
+    margin-bottom: 6px;
+    text-transform: none;
+    letter-spacing: 0;
 }}
 .metric-value {{
-    font-size: 2rem;
-    font-weight: 700;
+    font-size: 1.875rem;
+    font-weight: 600;
     color: #111827;
-    line-height: 1;
+    line-height: 1.2;
 }}
 .period-header {{
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     font-weight: 600;
     color: #374151;
-    margin: 20px 0 12px 0;
-    padding-left: 4px;
+    margin: 16px 0 8px 0;
+    padding-left: 0px;
 }}
 </style>
 """, unsafe_allow_html=True)
