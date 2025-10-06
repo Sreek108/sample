@@ -308,7 +308,7 @@ for key in data:
 
 grain = "Month"
 
-# Funnel and markets - UPDATED TO USE LeadStageAudit
+# Funnel and markets - CORRECTED VERSION
 def render_funnel_and_markets(d):
     leads      = d.get("leads")
     stages     = d.get("lead_stages")
@@ -335,10 +335,10 @@ def render_funnel_and_markets(d):
             funnel_query.groupby(["SortOrder", "StageName_E"])["LeadId"]
             .nunique()
             .reset_index(name="Count")
-            .sort_values("SortOrder", ascending=True)  # Ascending order for proper funnel
+            .sort_values("SortOrder", ascending=True)  # FIXED: Proper ascending order
         )
         
-        # Map stage names to your requirements
+        # Map stage names (keep original names or customize)
         stage_rename = {
             "New": "New",
             "Qualified": "Qualified",
@@ -351,7 +351,7 @@ def render_funnel_and_markets(d):
         
         funnel_df["Stage"] = funnel_df["StageName_E"].map(stage_rename).fillna(funnel_df["StageName_E"])
         
-        # Remove Lost from main funnel (show separately if needed)
+        # Remove Lost from main funnel (it's a separate outcome)
         funnel_df = funnel_df[funnel_df["Stage"] != "Lost"]
         
     else:
@@ -367,7 +367,7 @@ def render_funnel_and_markets(d):
         y=funnel_df['Stage'],
         x=funnel_df['Count'],
         textposition="inside",
-        textinfo="value+percent initial",
+        textinfo="value+percent initial",  # Shows count and % of initial
         textfont=dict(color="white", size=16, family="Inter"),
         marker={
             "color": ["#3498db", "#2ecc71", "#f39c12", "#e74c3c", "#9b59b6"],
