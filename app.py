@@ -34,9 +34,11 @@ BORDER_COL  = "rgba(0,0,0,0.10)"
 DIVIDER_COL = "rgba(0,0,0,0.12)"
 GRID_COL    = "rgba(0,0,0,0.06)"
 
-# Global styles
+# Global styles with Inter font
 st.markdown(f"""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 :root {{
   --bg-page: {BG_PAGE};
   --bg-surface: {BG_SURFACE};
@@ -44,6 +46,10 @@ st.markdown(f"""
   --text-muted: {TEXT_MUTED};
   --border-col: {BORDER_COL};
   --divider-col: {DIVIDER_COL};
+}}
+
+* {{
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
 }}
 
 section.main > div.block-container {{
@@ -54,9 +60,10 @@ section.main > div.block-container {{
 
 h1, h2, h3, h4, h5, h6, label, p, span, div, .st-emotion-cache-10trblm {{
   color: var(--text-main);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
 }}
 
-/* KPI Metric Cards - Matching WhatsApp Image Style */
+/* KPI Metric Cards - Professional Dashboard Style with Inter Font */
 .metric-card {{
     background: transparent;
     padding: 16px 12px;
@@ -67,8 +74,10 @@ h1, h2, h3, h4, h5, h6, label, p, span, div, .st-emotion-cache-10trblm {{
     display: flex;
     flex-direction: column;
     justify-content: center;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
 }}
 .metric-label {{
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
     font-size: 0.8125rem;
     color: #9CA3AF;
     font-weight: 400;
@@ -77,12 +86,15 @@ h1, h2, h3, h4, h5, h6, label, p, span, div, .st-emotion-cache-10trblm {{
     letter-spacing: 0;
 }}
 .metric-value {{
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
     font-size: 1.875rem;
     font-weight: 600;
     color: #111827;
     line-height: 1.2;
+    font-feature-settings: 'tnum' 1;
 }}
 .period-header {{
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
     font-size: 0.9rem;
     font-weight: 600;
     color: #374151;
@@ -329,7 +341,7 @@ def render_funnel_and_markets(d):
     fig.update_layout(
         height=450, margin=dict(l=0,r=0,t=10,b=10),
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        font_color=TEXT_MAIN
+        font_color=TEXT_MAIN, font_family="Inter"
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -603,21 +615,21 @@ def show_executive_summary(d):
         pad  = max(1.0, (ymax-ymin)*0.12)
         fig.update_layout(
             height=180,
-            title=dict(text=title, x=0.01, font=dict(size=12, color=TEXT_MUTED)),
+            title=dict(text=title, x=0.01, font=dict(size=12, color=TEXT_MUTED, family="Inter")),
             margin=dict(l=6,r=6,t=24,b=8),
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
-            font_color=TEXT_MAIN,
+            font=dict(color=TEXT_MAIN, family="Inter"),
             showlegend=False
         )
-        fig.update_xaxes(showgrid=True, gridcolor=GRID_COL, tickfont=dict(color=TEXT_MUTED, size=10), nticks=6, ticks="outside")
-        fig.update_yaxes(showgrid=True, gridcolor=GRID_COL, tickfont=dict(color=TEXT_MUTED, size=10), nticks=4, ticks="outside", range=[ymin-pad, ymax+pad])
+        fig.update_xaxes(showgrid=True, gridcolor=GRID_COL, tickfont=dict(color=TEXT_MUTED, size=10, family="Inter"), nticks=6, ticks="outside")
+        fig.update_yaxes(showgrid=True, gridcolor=GRID_COL, tickfont=dict(color=TEXT_MUTED, size=10, family="Inter"), nticks=4, ticks="outside", range=[ymin-pad, ymax+pad])
         return fig
 
     def tile_line(df, color, title):
         df = df.dropna().sort_values("period")
         if len(df)==0:
-            fig = go.Figure(); fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(color=TEXT_MUTED))
+            fig = go.Figure(); fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(color=TEXT_MUTED, family="Inter"))
             return _apply_axes(fig,[0,1],title)
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df["period"], y=df["idx"], mode="lines+markers",
@@ -627,7 +639,7 @@ def show_executive_summary(d):
     def tile_bar(df, color, title):
         df = df.dropna().sort_values("period")
         if len(df)==0:
-            fig = go.Figure(); fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(color=TEXT_MUTED))
+            fig = go.Figure(); fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(color=TEXT_MUTED, family="Inter"))
             return _apply_axes(fig,[0,1],title)
         fig = go.Figure()
         fig.add_trace(go.Bar(x=df["period"], y=df["idx"],
@@ -636,13 +648,13 @@ def show_executive_summary(d):
 
     def tile_bullet(df, title, bar_color):
         if df.empty or len(df)==0:
-            fig = go.Figure(); fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(color=TEXT_MUTED))
+            fig = go.Figure(); fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(color=TEXT_MUTED, family="Inter"))
             return _apply_axes(fig,[0,1],title)
         cur = float(df["idx"].iloc[-1])
         fig = go.Figure(go.Indicator(
             mode="number+gauge+delta",
             value=cur,
-            number={'valueformat': ".0f", 'font': {'color': TEXT_MAIN}},
+            number={'valueformat': ".0f", 'font': {'color': TEXT_MAIN, 'family': 'Inter'}},
             delta={'reference': 100},
             gauge={
                 'shape': "bullet",
@@ -656,7 +668,7 @@ def show_executive_summary(d):
                 'threshold': {'line': {'color': '#111827', 'width': 2}, 'value': 100}
             }
         ))
-        fig.update_layout(height=120, margin=dict(l=8,r=8,t=26,b=8), paper_bgcolor="rgba(0,0,0,0)", font_color=TEXT_MAIN)
+        fig.update_layout(height=120, margin=dict(l=8,r=8,t=26,b=8), paper_bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT_MAIN, family="Inter"))
         return fig
 
     s1, s2, s3 = st.columns(3)
@@ -707,7 +719,7 @@ def show_lead_status(d):
     with c1:
         fig = px.pie(counts, names="Status", values="count", hole=0.35, color_discrete_sequence=px.colors.sequential.Viridis,
                      title="Lead Status Share")
-        fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color=TEXT_MAIN)
+        fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT_MAIN, family="Inter"))
         st.plotly_chart(fig, use_container_width=True)
     with c2:
         st.metric("Total Leads", f"{len(L):,}")
@@ -728,7 +740,7 @@ def show_lead_status(d):
                      color="Status", color_discrete_sequence=dark_palette, text="count")
     fig_bar.update_traces(textposition='outside', textfont_size=12, marker_line=dict(color="rgba(255,255,255,0.6)", width=0.5))
     fig_bar.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                          font_color=TEXT_MAIN, height=400, showlegend=False,
+                          font=dict(color=TEXT_MAIN, family="Inter"), height=400, showlegend=False,
                           margin=dict(l=0, r=0, t=40, b=0), xaxis_title="Status", yaxis_title="Count")
     st.plotly_chart(fig_bar, use_container_width=True)
 
