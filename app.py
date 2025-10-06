@@ -441,7 +441,7 @@ def show_executive_summary(d):
             return f"{num:,}"
 
     # Week row
-    st.markdown('<div class="period-header">📅 Week To Date</div>', unsafe_allow_html=True)
+    st.markdown('<div class="period-header">Week To Date</div>', unsafe_allow_html=True)
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.markdown(f"""
@@ -473,7 +473,7 @@ def show_executive_summary(d):
         """, unsafe_allow_html=True)
 
     # Month row
-    st.markdown('<div class="period-header">📅 Month To Date</div>', unsafe_allow_html=True)
+    st.markdown('<div class="period-header">Month To Date</div>', unsafe_allow_html=True)
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.markdown(f"""
@@ -505,7 +505,7 @@ def show_executive_summary(d):
         """, unsafe_allow_html=True)
 
     # Year row
-    st.markdown('<div class="period-header">📅 Year To Date</div>', unsafe_allow_html=True)
+    st.markdown('<div class="period-header">Year To Date</div>', unsafe_allow_html=True)
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.markdown(f"""
