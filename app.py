@@ -45,7 +45,7 @@ BORDER_COL  = "rgba(0,0,0,0.10)"
 DIVIDER_COL = "rgba(0,0,0,0.12)"
 GRID_COL    = "rgba(0,0,0,0.06)"
 
-# Professional CSS with updated KPI specifications
+# Professional CSS with STREAMLIT DEFAULT METRIC STYLING
 st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -60,7 +60,7 @@ st.markdown(f"""
 }}
 
 * {{
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
 }}
 
 section.main > div.block-container {{
@@ -72,10 +72,10 @@ section.main > div.block-container {{
 
 h1, h2, h3, h4, h5, h6, label, p, span, div, .st-emotion-cache-10trblm {{
   color: var(--text-main);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
 }}
 
-/* Optimized KPI Metric Cards */
+/* KPI Metric Cards - STREAMLIT DEFAULT STYLING */
 .metric-card {{
     background: var(--bg-surface);
     padding: 20px 16px;
@@ -86,7 +86,7 @@ h1, h2, h3, h4, h5, h6, label, p, span, div, .st-emotion-cache-10trblm {{
     display: flex;
     flex-direction: column;
     justify-content: center;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     transition: box-shadow 0.2s ease;
 }}
@@ -95,30 +95,30 @@ h1, h2, h3, h4, h5, h6, label, p, span, div, .st-emotion-cache-10trblm {{
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
 }}
 
-/* KPI Labels - Professional specs */
+/* KPI Labels - Streamlit Default Metric Style */
 .metric-label {{
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', Arial, sans-serif;
-    font-size: 15px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+    font-size: 14px;
     font-weight: 400;
-    color: #6B7280;
+    color: #808080;
     margin-bottom: 8px;
     text-transform: none;
     letter-spacing: 0;
     line-height: 1.4;
 }}
 
-/* KPI Values - Professional specs */
+/* KPI Values - Streamlit Default Metric Style */
 .metric-value {{
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', Arial, sans-serif;
-    font-size: 28px;
-    font-weight: 700;
-    color: #111827;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+    font-size: 36px;
+    font-weight: 600;
+    color: {TEXT_MAIN};
     line-height: 1.2;
     font-feature-settings: 'tnum' 1;
 }}
 
 .period-header {{
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
     font-size: 16px;
     font-weight: 600;
     color: #374151;
@@ -211,13 +211,13 @@ def get_connection() -> Tuple[Optional[Any], Optional[callable]]:
         engine = sa.create_engine(
             url, 
             fast_executemany=True,
-            pool_pre_ping=True,      # Verify connections before using
-            pool_size=5,             # Connection pool size
-            max_overflow=10,         # Additional connections if needed
-            pool_recycle=3600,       # Recycle connections every hour
+            pool_pre_ping=True,
+            pool_size=5,
+            max_overflow=10,
+            pool_recycle=3600,
             connect_args={
-                "timeout": 30,       # Connection timeout
-                "command_timeout": 300  # Query timeout
+                "timeout": 30,
+                "command_timeout": 300
             }
         )
         
@@ -492,7 +492,6 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
                 how="inner"
             )
             
-            # Efficient groupby with proper sorting
             funnel_df = (
                 funnel_query.groupby(["SortOrder", "StageName_E"], as_index=False)["LeadId"]
                 .nunique()
@@ -500,7 +499,6 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
                 .sort_values("SortOrder", ascending=True)
             )
             
-            # Clean stage names
             stage_rename = {
                 "New": "New Leads", "Qualified": "Qualified", "Followup Process": "Follow-up",
                 "Meeting Scheduled": "Meetings", "Negotiation": "Negotiation", "Won": "Won"
@@ -586,9 +584,9 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
         logger.error(f"Funnel rendering error: {e}")
         st.error("📊 Error rendering funnel chart")
 
-# OPTIMIZED Executive Summary
+# OPTIMIZED Executive Summary with PERFORMANCE TRENDS
 def show_executive_summary(d: Dict[str, pd.DataFrame]):
-    """Display executive summary with optimized calculations"""
+    """Display executive summary with optimized calculations and performance trends"""
     leads_all = d.get("leads", pd.DataFrame())
     lead_statuses = d.get("lead_statuses", pd.DataFrame())
 
@@ -596,7 +594,7 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
         return
 
     # Resolve Won status ID efficiently
-    won_status_id = 9  # Default fallback
+    won_status_id = 9
     if not lead_statuses.empty and "StatusName_E" in lead_statuses.columns:
         won_mask = lead_statuses["StatusName_E"].str.lower() == "won"
         if won_mask.any():
@@ -626,7 +624,6 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
                                 start_ts: pd.Timestamp, end_ts: pd.Timestamp, won_id: int):
         """Calculate metrics for a specific period efficiently"""
         try:
-            # Filter leads by date
             if "CreatedOn" in leads_data.columns:
                 dt_mask = (
                     (pd.to_datetime(leads_data["CreatedOn"], errors="coerce") >= start_ts) & 
@@ -636,7 +633,6 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
             else:
                 period_leads = pd.DataFrame()
 
-            # Filter meetings by date
             period_meetings = pd.DataFrame()
             if not meetings_data.empty and "StartDateTime" in meetings_data.columns:
                 dt_mask = (
@@ -647,7 +643,6 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
                 if "MeetingStatusId" in valid_meetings.columns:
                     period_meetings = valid_meetings[valid_meetings["MeetingStatusId"].isin([1, 6])]
 
-            # Calculate metrics
             total = len(period_leads)
             won = int((period_leads.get("LeadStatusId", pd.Series(dtype="int64")) == won_id).sum()) if total > 0 else 0
             conv_pct = (won / total * 100.0) if total > 0 else 0.0
@@ -659,12 +654,12 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
             logger.error(f"Metrics calculation error: {e}")
             return 0, 0.0, 0, 0
 
-    # Calculate all period metrics efficiently
+    # Calculate all period metrics
     metrics = {}
     for period_name, (start_ts, end_ts) in periods.items():
         metrics[period_name] = calculate_period_metrics(leads_all, meetings_all, start_ts, end_ts, won_status_id)
 
-    # Display KPI cards with professional styling
+    # Display KPI cards
     for period_name, period_label in [('week', 'Week To Date'), ('month', 'Month To Date'), ('year', 'Year To Date')]:
         total, conv_pct, meetings, won = metrics[period_name]
         
@@ -703,11 +698,22 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
             </div>
             """, unsafe_allow_html=True)
 
-    # Trends section (simplified for performance)
+    # ============ PERFORMANCE TRENDS SECTION ============
     st.markdown("---")
     st.subheader("📈 Performance Trends")
     
-    # Filter leads by selected date range
+    trend_col1, trend_col2 = st.columns([2, 1])
+    with trend_col1:
+        trend_style = st.radio(
+            "Chart Style", 
+            ["Line", "Bars", "Bullet"], 
+            index=0, 
+            horizontal=True, 
+            key="trend_style_exec"
+        )
+    with trend_col2:
+        st.caption("📊 Indexed to first period = 100")
+    
     start_day = pd.Timestamp(date_from)
     end_day = pd.Timestamp(date_to)
     
@@ -717,18 +723,177 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
             (pd.to_datetime(leads_all["CreatedOn"], errors="coerce").dt.date <= end_day.date())
         )
         filtered_leads = leads_all[date_mask].copy()
-        
-        if not filtered_leads.empty:
-            st.info(f"📅 Showing {len(filtered_leads):,} leads from {date_from} to {date_to}")
-        else:
-            st.warning("⚠️ No leads found in the selected date range")
-            filtered_leads = leads_all.tail(100)  # Show recent data as fallback
     else:
-        filtered_leads = leads_all.copy()
+        filtered_leads = pd.DataFrame()
+    
+    if not filtered_leads.empty:
+        leads_local = filtered_leads.copy()
+        if "CreatedOn" in leads_local.columns:
+            dt = pd.to_datetime(leads_local["CreatedOn"], errors="coerce")
+            if grain == "Week":
+                leads_local["period"] = dt.dt.to_period("W").apply(lambda p: p.start_time.date())
+            elif grain == "Month":
+                leads_local["period"] = dt.dt.to_period("M").apply(lambda p: p.start_time.date())
+            else:
+                leads_local["period"] = dt.dt.to_period("Y").apply(lambda p: p.start_time.date())
+
+        leads_ts = leads_local.groupby("period").size().reset_index(name="value") if "period" in leads_local.columns else pd.DataFrame()
+        
+        if "LeadStatusId" in leads_local.columns and "period" in leads_local.columns:
+            per_total = leads_local.groupby("period").size()
+            per_won = leads_local.loc[leads_local["LeadStatusId"].eq(won_status_id)].groupby("period").size()
+            conv_ts = pd.DataFrame({"period": per_total.index, "total": per_total.values}).merge(
+                pd.DataFrame({"period": per_won.index, "won": per_won.values}), on="period", how="left"
+            ).fillna(0.0)
+            conv_ts["value"] = (conv_ts["won"] / conv_ts["total"] * 100).round(1)
+        else:
+            conv_ts = pd.DataFrame()
+
+        if not meetings_all.empty and "StartDateTime" in meetings_all.columns:
+            m = meetings_all.copy()
+            m["dt"] = pd.to_datetime(m["StartDateTime"], errors="coerce")
+            if grain == "Week":
+                m["period"] = m["dt"].dt.to_period("W").apply(lambda p: p.start_time.date())
+            elif grain == "Month":
+                m["period"] = m["dt"].dt.to_period("M").apply(lambda p: p.start_time.date())
+            else:
+                m["period"] = m["dt"].dt.to_period("Y").apply(lambda p: p.start_time.date())
+            
+            if "MeetingStatusId" in m.columns:
+                m = m[m["MeetingStatusId"].isin([1, 6])]
+            meet_ts = m.groupby("period")["LeadId"].nunique().reset_index(name="value")
+        else:
+            meet_ts = pd.DataFrame()
+
+        def _index(df):
+            df = df.copy()
+            if df.empty:
+                df["idx"] = []
+                return df
+            base = df["value"].iloc[0] if len(df) > 0 and df["value"].iloc[0] != 0 else 1.0
+            df["idx"] = (df["value"] / base) * 100.0
+            return df
+
+        leads_ts = _index(leads_ts)
+        conv_ts = _index(conv_ts)
+        meet_ts = _index(meet_ts)
+
+        def _apply_axes(fig, ys, title):
+            ymin = float(pd.Series(ys).min()) if len(ys) else 0
+            ymax = float(pd.Series(ys).max()) if len(ys) else 1
+            pad = max(1.0, (ymax - ymin) * 0.12)
+            fig.update_layout(
+                height=220,
+                title=dict(text=title, x=0.01, font=dict(size=13, color=TEXT_MUTED, family="Inter", weight="600")),
+                margin=dict(l=10, r=10, t=35, b=20),
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)",
+                font=dict(color=TEXT_MAIN, family="Inter"),
+                showlegend=False
+            )
+            fig.update_xaxes(showgrid=True, gridcolor=GRID_COL, tickfont=dict(color=TEXT_MUTED, size=10), nticks=6)
+            fig.update_yaxes(showgrid=True, gridcolor=GRID_COL, tickfont=dict(color=TEXT_MUTED, size=10), nticks=5, range=[ymin - pad, ymax + pad])
+            return fig
+
+        def tile_line(df, color, title):
+            df = df.dropna().sort_values("period")
+            if len(df) == 0:
+                fig = go.Figure()
+                fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(color=TEXT_MUTED))
+                return _apply_axes(fig, [0, 1], title)
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=df["period"], y=df["idx"], 
+                mode="lines+markers",
+                line=dict(color=color, width=3, shape="spline"),
+                marker=dict(size=8, color=color, line=dict(color="white", width=2))
+            ))
+            return _apply_axes(fig, df["idx"], title)
+
+        def tile_bar(df, color, title):
+            df = df.dropna().sort_values("period")
+            if len(df) == 0:
+                fig = go.Figure()
+                fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(color=TEXT_MUTED))
+                return _apply_axes(fig, [0, 1], title)
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=df["period"], y=df["idx"],
+                marker=dict(color=color, line=dict(color="rgba(255,255,255,0.6)", width=1)),
+                opacity=0.9
+            ))
+            return _apply_axes(fig, df["idx"], title)
+
+        def tile_bullet(df, title, bar_color):
+            if df.empty or len(df) == 0:
+                fig = go.Figure()
+                fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(color=TEXT_MUTED))
+                return _apply_axes(fig, [0, 1], title)
+            
+            cur = float(df["idx"].iloc[-1])
+            fig = go.Figure(go.Indicator(
+                mode="number+gauge+delta",
+                value=cur,
+                number={'valueformat': ".0f", 'font': {'color': TEXT_MAIN, 'size': 20}},
+                delta={'reference': 100, 'valueformat': '.1f'},
+                gauge={
+                    'shape': "bullet",
+                    'axis': {'range': [80, 120]},
+                    'steps': [
+                        {'range': [80, 95], 'color': "rgba(239,68,68,0.15)"},
+                        {'range': [95, 105], 'color': "rgba(234,179,8,0.15)"},
+                        {'range': [105, 120], 'color': "rgba(34,197,94,0.15)"},
+                    ],
+                    'bar': {'color': bar_color, 'thickness': 0.75},
+                    'threshold': {'line': {'color': '#111827', 'width': 2}, 'value': 100}
+                }
+            ))
+            fig.update_layout(height=160, margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor="rgba(0,0,0,0)")
+            return fig
+
+        s1, s2, s3 = st.columns(3)
+        
+        if trend_style == "Line":
+            with s1: 
+                with st.container(border=True):
+                    st.plotly_chart(tile_line(leads_ts, ACCENT_BLUE, "Leads Trend"), use_container_width=True, config={'displayModeBar': False})
+            with s2: 
+                with st.container(border=True):
+                    st.plotly_chart(tile_line(conv_ts, ACCENT_GREEN, "Conversion Rate Trend"), use_container_width=True, config={'displayModeBar': False})
+            with s3: 
+                with st.container(border=True):
+                    st.plotly_chart(tile_line(meet_ts, PRIMARY_GOLD, "Meetings Trend"), use_container_width=True, config={'displayModeBar': False})
+                    
+        elif trend_style == "Bars":
+            with s1: 
+                with st.container(border=True):
+                    st.plotly_chart(tile_bar(leads_ts, ACCENT_BLUE, "Leads Trend"), use_container_width=True, config={'displayModeBar': False})
+            with s2: 
+                with st.container(border=True):
+                    st.plotly_chart(tile_bar(conv_ts, ACCENT_GREEN, "Conversion Rate Trend"), use_container_width=True, config={'displayModeBar': False})
+            with s3: 
+                with st.container(border=True):
+                    st.plotly_chart(tile_bar(meet_ts, PRIMARY_GOLD, "Meetings Trend"), use_container_width=True, config={'displayModeBar': False})
+                    
+        else:
+            with s1: 
+                with st.container(border=True):
+                    st.plotly_chart(tile_bullet(leads_ts, "Leads Index", ACCENT_BLUE), use_container_width=True, config={'displayModeBar': False})
+            with s2: 
+                with st.container(border=True):
+                    st.plotly_chart(tile_bullet(conv_ts, "Conversion Index", ACCENT_GREEN), use_container_width=True, config={'displayModeBar': False})
+            with s3: 
+                with st.container(border=True):
+                    st.plotly_chart(tile_bullet(meet_ts, "Meetings Index", PRIMARY_GOLD), use_container_width=True, config={'displayModeBar': False})
+        
+        st.info(f"📅 Showing {len(filtered_leads):,} leads from {date_from} to {date_to}")
+    
+    else:
+        st.warning("⚠️ No leads found in the selected date range")
 
     st.markdown("---")
     st.subheader("🎯 Lead Conversion Analysis")
-    render_funnel_and_markets({**d, "leads": filtered_leads})
+    render_funnel_and_markets({**d, "leads": filtered_leads if not filtered_leads.empty else leads_all})
 
 # OPTIMIZED Lead Status Analysis
 def show_lead_status(d: Dict[str, pd.DataFrame]):
@@ -742,29 +907,23 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
         return
 
     try:
-        # Build status name mapping
         name_map = {}
         if not stats.empty and "StatusName_E" in stats.columns:
             name_map = dict(zip(stats["LeadStatusId"].astype(int), stats["StatusName_E"].astype(str)))
 
-        # Process leads data
         L = leads.copy()
         L["Status"] = L["LeadStatusId"].map(name_map).fillna(L["LeadStatusId"].astype(str))
         L["CreatedOn"] = pd.to_datetime(L.get("CreatedOn"), errors="coerce")
         
-        # Calculate lead age
         cutoff = L["CreatedOn"].max() if "CreatedOn" in L.columns else pd.Timestamp.today()
         L["age_days"] = (cutoff - L["CreatedOn"]).dt.days.fillna(0).astype(int)
 
-        # Status distribution
         status_counts = L["Status"].value_counts().reset_index()
         status_counts.columns = ["Status", "Count"]
 
-        # Professional visualizations
         col1, col2 = st.columns([3, 1])
         
         with col1:
-            # Enhanced pie chart
             fig_pie = px.pie(
                 status_counts, 
                 names="Status", 
@@ -773,26 +932,20 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
                 color_discrete_sequence=px.colors.qualitative.Set3,
                 title="Lead Status Distribution"
             )
-            fig_pie.update_traces(
-                textposition='inside', 
-                textinfo='percent+label',
-                textfont_size=12
-            )
+            fig_pie.update_traces(textposition='inside', textinfo='percent+label', textfont_size=12)
             fig_pie.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)",
                 paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color=TEXT_MAIN, family="Inter"),
+                font=dict(color=TEXT_MAIN),
                 title_font_size=16,
                 height=400
             )
             st.plotly_chart(fig_pie, use_container_width=True, config={'displayModeBar': False})
 
         with col2:
-            # Key metrics
             total_leads = len(L)
             st.metric("📊 Total Leads", f"{total_leads:,}")
             
-            # Won leads calculation
             won_count = 0
             if not stats.empty and "StatusName_E" in stats.columns:
                 won_status = stats[stats["StatusName_E"].str.lower() == "won"]
@@ -807,11 +960,8 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
                 st.metric("📈 Win Rate", f"{win_rate:.1f}%")
 
         st.markdown("---")
-        
-        # Enhanced status breakdown with performance metrics
         st.subheader("📋 Detailed Status Analysis")
 
-        # Calculate meeting rates
         meeting_rates = pd.DataFrame({"Status": [], "meeting_rate": []})
         if not meets.empty and "LeadId" in meets.columns:
             valid_meetings = meets[meets.get("MeetingStatusId", pd.Series()).isin([1, 6])]
@@ -823,7 +973,6 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
                     .reset_index(name="meetings")
                 )
 
-        # Calculate call connection rates
         connection_rates = pd.DataFrame({"Status": [], "connect_rate": []})
         if not calls.empty and "LeadId" in calls.columns:
             call_data = calls.merge(L[["LeadId", "Status"]], on="LeadId", how="inner")
@@ -835,17 +984,14 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
                 conn_stats["connect_rate"] = (conn_stats["connected_calls"] / conn_stats["total_calls"]).fillna(0)
                 connection_rates = conn_stats[["Status", "connect_rate"]]
 
-        # Combine all metrics
         summary_stats = L.groupby("Status").agg(
             Leads=("LeadId", "count"),
             Avg_Age_Days=("age_days", "mean")
         ).reset_index()
 
-        # Calculate market share
         total = summary_stats["Leads"].sum()
         summary_stats["Market_Share"] = (summary_stats["Leads"] / total * 100).round(1) if total > 0 else 0
 
-        # Merge with meeting and connection rates
         if not meeting_rates.empty:
             summary_stats = summary_stats.merge(meeting_rates.rename(columns={"meetings": "Meeting_Count"}), on="Status", how="left")
             summary_stats["Meeting_Rate"] = (summary_stats["Meeting_Count"].fillna(0) / summary_stats["Leads"] * 100).round(1)
@@ -858,11 +1004,9 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
         else:
             summary_stats["connect_rate"] = 0.0
 
-        # Clean up data
         summary_stats["Avg_Age_Days"] = summary_stats["Avg_Age_Days"].fillna(0).round(1)
         summary_stats = summary_stats.sort_values("Leads", ascending=False)
 
-        # Professional data table
         st.dataframe(
             summary_stats[["Status", "Leads", "Market_Share", "Avg_Age_Days", "Meeting_Rate", "connect_rate"]],
             use_container_width=True,
@@ -881,7 +1025,7 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
         logger.error(f"Lead status analysis error: {e}")
         st.error("❌ Error analyzing lead status data")
 
-# PROFESSIONAL Navigation with Optimized Date Filter
+# NAVIGATION with UNRESTRICTED Custom Date Filter
 NAV = [
     ("Executive", "speedometer2", "🎯 Executive Summary"),
     ("Lead Status", "people", "📈 Lead Status Analysis"),
@@ -948,13 +1092,12 @@ if HAS_OPTION_MENU:
             elif filter_type == "Custom":
                 st.markdown("#### 📆 Select Custom Range")
                 
-                # Initialize defaults if not set
                 if 'date_from' not in st.session_state:
                     st.session_state.date_from = today - timedelta(days=30)
                 if 'date_to' not in st.session_state:
                     st.session_state.date_to = today
                 
-                # UNRESTRICTED: No min/max date limits
+                # UNRESTRICTED: No date limits
                 custom_from = st.date_input(
                     "From Date", 
                     value=st.session_state.date_from,
@@ -967,7 +1110,6 @@ if HAS_OPTION_MENU:
                     key="custom_date_to_nav"
                 )
                 
-                # Apply button with validation
                 if st.button("✅ Apply Custom Range", type="primary", use_container_width=True, key="apply_custom_btn"):
                     if custom_from <= custom_to:
                         st.session_state.date_from = custom_from
@@ -977,19 +1119,16 @@ if HAS_OPTION_MENU:
                     else:
                         st.error("❌ 'From Date' must be before 'To Date'")
                 
-                # Show current selection
                 st.info(f"📅 Current: {st.session_state.date_from} to {st.session_state.date_to}")
     
     st.markdown("---")
     
-    # Route to selected page
     if selected == "Executive":
         show_executive_summary(data)
     elif selected == "Lead Status":
         show_lead_status(data)
         
 else:
-    # Fallback navigation with same unrestricted dates
     nav_col, filter_col = st.columns([5.5, 0.5])
     
     with nav_col:
@@ -1033,7 +1172,6 @@ else:
                 if 'date_to' not in st.session_state:
                     st.session_state.date_to = today
                 
-                # UNRESTRICTED: No date limits
                 custom_from = st.date_input(
                     "From Date", 
                     value=st.session_state.date_from,
