@@ -852,38 +852,27 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
         
         if trend_style == "Line":
             with s1: 
-                with st.container(border=True):
-                    st.plotly_chart(tile_line(leads_ts, ACCENT_BLUE, "Leads Trend"), use_container_width=True, config={'displayModeBar': False})
+                st.plotly_chart(tile_line(leads_ts, ACCENT_BLUE, "Leads Trend"), use_container_width=True, config={'displayModeBar': False})
             with s2: 
-                with st.container(border=True):
-                    st.plotly_chart(tile_line(conv_ts, ACCENT_GREEN, "Conversion Rate Trend"), use_container_width=True, config={'displayModeBar': False})
+                st.plotly_chart(tile_line(conv_ts, ACCENT_GREEN, "Conversion Rate Trend"), use_container_width=True, config={'displayModeBar': False})
             with s3: 
-                with st.container(border=True):
-                    st.plotly_chart(tile_line(meet_ts, PRIMARY_GOLD, "Meetings Trend"), use_container_width=True, config={'displayModeBar': False})
+                st.plotly_chart(tile_line(meet_ts, PRIMARY_GOLD, "Meetings Trend"), use_container_width=True, config={'displayModeBar': False})
                     
         elif trend_style == "Bars":
             with s1: 
-                with st.container(border=True):
-                    st.plotly_chart(tile_bar(leads_ts, ACCENT_BLUE, "Leads Trend"), use_container_width=True, config={'displayModeBar': False})
+                st.plotly_chart(tile_bar(leads_ts, ACCENT_BLUE, "Leads Trend"), use_container_width=True, config={'displayModeBar': False})
             with s2: 
-                with st.container(border=True):
-                    st.plotly_chart(tile_bar(conv_ts, ACCENT_GREEN, "Conversion Rate Trend"), use_container_width=True, config={'displayModeBar': False})
+                st.plotly_chart(tile_bar(conv_ts, ACCENT_GREEN, "Conversion Rate Trend"), use_container_width=True, config={'displayModeBar': False})
             with s3: 
-                with st.container(border=True):
-                    st.plotly_chart(tile_bar(meet_ts, PRIMARY_GOLD, "Meetings Trend"), use_container_width=True, config={'displayModeBar': False})
+                st.plotly_chart(tile_bar(meet_ts, PRIMARY_GOLD, "Meetings Trend"), use_container_width=True, config={'displayModeBar': False})
                     
-        else:
+        else:  # Bullet
             with s1: 
-                with st.container(border=True):
-                    st.plotly_chart(tile_bullet(leads_ts, "Leads Index", ACCENT_BLUE), use_container_width=True, config={'displayModeBar': False})
+                st.plotly_chart(tile_bullet(leads_ts, "Leads Index", ACCENT_BLUE), use_container_width=True, config={'displayModeBar': False})
             with s2: 
-                with st.container(border=True):
-                    st.plotly_chart(tile_bullet(conv_ts, "Conversion Index", ACCENT_GREEN), use_container_width=True, config={'displayModeBar': False})
+                st.plotly_chart(tile_bullet(conv_ts, "Conversion Index", ACCENT_GREEN), use_container_width=True, config={'displayModeBar': False})
             with s3: 
-                with st.container(border=True):
-                    st.plotly_chart(tile_bullet(meet_ts, "Meetings Index", PRIMARY_GOLD), use_container_width=True, config={'displayModeBar': False})
-        
-        st.info(f"📅 Showing {len(filtered_leads):,} leads from {date_from} to {date_to}")
+                st.plotly_chart(tile_bullet(meet_ts, "Meetings Index", PRIMARY_GOLD), use_container_width=True, config={'displayModeBar': False})
     
     else:
         st.warning("⚠️ No leads found in the selected date range")
