@@ -876,4 +876,95 @@ if HAS_OPTION_MENU:
             if filter_type == "Week":
                 st.session_state.date_from = today - timedelta(days=7)
                 st.session_state.date_to = today
-                st.success(f"
+                st.success(f"✅ Last 7 days")
+                
+            elif filter_type == "Month":
+                st.session_state.date_from = today - timedelta(days=30)
+                st.session_state.date_to = today
+                st.success(f"✅ Last 30 days")
+                
+            elif filter_type == "Year":
+                st.session_state.date_from = today - timedelta(days=365)
+                st.session_state.date_to = today
+                st.success(f"✅ Last 365 days")
+                
+            else:
+                st.markdown("#### Custom Range")
+                custom_from = st.date_input(
+                    "From", 
+                    value=st.session_state.get('date_from', today - timedelta(days=30)),
+                    key="custom_date_from_nav"
+                )
+                
+                custom_to = st.date_input(
+                    "To", 
+                    value=st.session_state.get('date_to', today),
+                    key="custom_date_to_nav"
+                )
+                
+                if st.button("Apply", type="primary", use_container_width=True, key="apply_custom_date_nav"):
+                    st.session_state.date_from = custom_from
+                    st.session_state.date_to = custom_to
+                    st.success(f"✅ Applied")
+                    st.rerun()
+    
+    st.markdown("---")
+    
+    if selected == "Executive":
+        show_executive_summary(fdata)
+    elif selected == "Lead Status":
+        show_lead_status(fdata)
+        
+else:
+    nav_col, filter_col = st.columns([5.5, 0.5])
+    
+    with nav_col:
+        tabs = st.tabs([n[2] for n in NAV])
+    
+    with filter_col:
+        st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
+        
+        with st.popover("📅", use_container_width=True):
+            st.markdown("### 📅 Date Filter")
+            
+            filter_type = st.radio(
+                "Time Period",
+                ["Week", "Month", "Year", "Custom"],
+                horizontal=False,
+                key="date_filter_type_fallback"
+            )
+            
+            today = date.today()
+            
+            if filter_type == "Week":
+                st.session_state.date_from = today - timedelta(days=7)
+                st.session_state.date_to = today
+                st.success(f"✅ Last 7 days")
+                
+            elif filter_type == "Month":
+                st.session_state.date_from = today - timedelta(days=30)
+                st.session_state.date_to = today
+                st.success(f"✅ Last 30 days")
+                
+            elif filter_type == "Year":
+                st.session_state.date_from = today - timedelta(days=365)
+                st.session_state.date_to = today
+                st.success(f"✅ Last 365 days")
+                
+            else:
+                st.markdown("#### Custom Range")
+                custom_from = st.date_input("From", value=st.session_state.get('date_from', today - timedelta(days=30)), key="custom_from_fb")
+                custom_to = st.date_input("To", value=st.session_state.get('date_to', today), key="custom_to_fb")
+                
+                if st.button("Apply", type="primary", use_container_width=True, key="apply_fb"):
+                    st.session_state.date_from = custom_from
+                    st.session_state.date_to = custom_to
+                    st.success(f"✅ Applied")
+                    st.rerun()
+    
+    st.markdown("---")
+    
+    with tabs[0]:
+        show_executive_summary(fdata)
+    with tabs[1]:
+        show_lead_status(fdata)
