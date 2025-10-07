@@ -513,6 +513,7 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
             paper_bgcolor="rgba(0,0,0,0)",
             font=dict(color=TEXT_MAIN),
             title=dict(
+                text=f"",
                 x=0.5, 
                 xanchor='center',
                 font=dict(size=20, color=TEXT_MAIN)
