@@ -68,7 +68,9 @@ section.main > div.block-container {{
   padding-top: 1rem;
 }}
 
-[data-testid="stSidebar"] {{ display: none; }}
+[data-testid="stSidebar"] {{ 
+  display: none; 
+}}
 
 h1, h2, h3, h4, h5, h6, label, p, span, div {{
   color: var(--text-main);
@@ -101,11 +103,10 @@ h1, h2, h3, h4, h5, h6, label, p, span, div {{
     line-height: 1.2;
 }}
 
-/* Period Divider */
+/* Period Divider - NO BORDER LINES */
 .period-divider {{
     margin: 32px 0 16px 0;
-    padding-top: 16px;
-    border-top: 1px solid #E5E7EB;
+    padding-top: 0px;
 }}
 
 .period-header {{
@@ -119,6 +120,20 @@ h1, h2, h3, h4, h5, h6, label, p, span, div {{
 /* Loading spinner */
 .stSpinner > div {{
   border-top-color: {PRIMARY_GOLD} !important;
+}}
+
+/* Hide Streamlit branding */
+#MainMenu {{
+  visibility: hidden;
+}}
+
+footer {{
+  visibility: hidden;
+}}
+
+/* Smooth scrolling */
+html {{
+  scroll-behavior: smooth;
 }}
 </style>
 """, unsafe_allow_html=True)
