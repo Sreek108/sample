@@ -208,7 +208,7 @@ def load_transactional_data(_conn, _runner):
     leads = q("""
         SELECT 
             LeadId, LeadCode, LeadStageId, LeadStatusId, LeadScoringId,
-            AssignedAgentId, CountryId, CityRegionId, CreatedOn, ModifiedOn, IsActive
+            AssignedAgentId, CountryId, CityRegionId, CreatedOn, IsActive
         FROM dbo.Lead 
         WHERE IsActive = 1
     """)
@@ -217,23 +217,21 @@ def load_transactional_data(_conn, _runner):
         SELECT 
             AssignmentId, LeadId, StartDateTime, EndDateTime, 
             MeetingStatusId, AgentId
-        FROM dbo.AgentMeetingAssignment 
-        WHERE MeetingStatusId IN (1, 6)
+        FROM dbo.AgentMeetingAssignment
     """)
     
     calls = q("""
         SELECT 
             LeadCallId, LeadId, CallDateTime, DurationSeconds,
             CallStatusId, SentimentId, AssignedAgentId, CallDirection
-        FROM dbo.LeadCallRecord 
-        WHERE CallDateTime >= DATEADD(MONTH, -12, GETDATE())
+        FROM dbo.LeadCallRecord
     """)
     
+    # NEW: Load LeadStageAudit for funnel
     stage_audit = q("""
         SELECT 
             AuditId, LeadId, StageId, CreatedOn
-        FROM dbo.LeadStageAudit 
-        WHERE CreatedOn >= DATEADD(MONTH, -12, GETDATE())
+        FROM dbo.LeadStageAudit
     """)
     
     return {
@@ -265,11 +263,9 @@ for key in data:
                 "leadid": "LeadId", "leadcode": "LeadCode", "leadstageid": "LeadStageId",
                 "leadstatusid": "LeadStatusId", "leadscoringid": "LeadScoringId",
                 "assignedagentid": "AssignedAgentId", "createdon": "CreatedOn",
-                "modifiedon": "ModifiedOn", "isactive": "IsActive", 
-                "countryid": "CountryId", "cityregionid": "CityRegionId",
+                "isactive": "IsActive", "countryid": "CountryId", "cityregionid": "CityRegionId",
             })
             df["CreatedOn"] = pd.to_datetime(df["CreatedOn"], errors="coerce")
-            df["ModifiedOn"] = pd.to_datetime(df["ModifiedOn"], errors="coerce")
             
         elif key == "agent_meeting_assignment":
             df = df.rename(columns={
@@ -312,7 +308,7 @@ for key in data:
 
 grain = "Month"
 
-# Funnel and markets
+# Funnel and markets - CORRECTED VERSION
 def render_funnel_and_markets(d):
     leads      = d.get("leads")
     stages     = d.get("lead_stages")
@@ -334,37 +330,54 @@ def render_funnel_and_markets(d):
             how="left"
         )
         
+        # Get unique leads per stage
         funnel_df = (
-            funnel_query.groupby(["SortOrder", "StageName_E"], as_index=False)["LeadId"]
+            funnel_query.groupby(["SortOrder", "StageName_E"])["LeadId"]
             .nunique()
-            .rename(columns={"LeadId": "Count"})
-            .sort_values("SortOrder", ascending=True)
+            .reset_index(name="Count")
+            .sort_values("SortOrder", ascending=True)  # FIXED: Proper ascending order
         )
         
-        funnel_df = funnel_df[funnel_df["StageName_E"].str.lower() != "lost"]
-        funnel_df["Stage"] = funnel_df["StageName_E"]
+        # Map stage names (keep original names or customize)
+        stage_rename = {
+            "New": "New",
+            "Qualified": "Qualified",
+            "Followup Process": "Followup Process",
+            "Meeting Scheduled": "Meeting Scheduled",
+            "Negotiation": "Negotiation",
+            "Won": "Won",
+            "Lost": "Lost"
+        }
+        
+        funnel_df["Stage"] = funnel_df["StageName_E"].map(stage_rename).fillna(funnel_df["StageName_E"])
+        
+        # Remove Lost from main funnel (it's a separate outcome)
+        funnel_df = funnel_df[funnel_df["Stage"] != "Lost"]
         
     else:
+        # Fallback if audit table unavailable
         st.info("LeadStageAudit unavailable - showing basic funnel")
-        funnel_df = pd.DataFrame([{"Stage": "New", "Count": total_leads, "SortOrder": 1}])
+        funnel_df = pd.DataFrame([
+            {"Stage": "New", "Count": total_leads, "SortOrder": 1},
+        ])
 
-    # Create funnel chart
+    # Create funnel chart with proper order
     fig = go.Figure(go.Funnel(
         name='Sales Funnel',
         y=funnel_df['Stage'],
         x=funnel_df['Count'],
         textposition="inside",
-        textinfo="value+percent initial",
+        textinfo="value+percent initial",  # Shows count and % of initial
         textfont=dict(color="white", size=16, family="Inter"),
         marker={
-            "color": ["#3498db", "#2ecc71", "#f39c12", "#e74c3c", "#9b59b6", "#1abc9c"][:len(funnel_df)],
+            "color": ["#3498db", "#2ecc71", "#f39c12", "#e74c3c", "#9b59b6"],
             "line": {"width": 2, "color": "white"}
         },
         connector={"line": {"color": "#34495e", "width": 3}}
     ))
     
     fig.update_layout(
-        height=600,
+        height=500, 
         margin=dict(l=0, r=0, t=50, b=10),
         plot_bgcolor="rgba(0,0,0,0)", 
         paper_bgcolor="rgba(0,0,0,0)",
@@ -383,15 +396,12 @@ def render_funnel_and_markets(d):
     # Top markets
     if countries is not None and "CountryId" in leads.columns and "CountryName_E" in countries.columns:
         bycountry = (
-            leads.groupby("CountryId", dropna=True, as_index=False).size()
-            .rename(columns={"size": "Leads"})
-            .merge(countries[["CountryId","CountryName_E"]].rename(columns={"CountryName_E":"Country"}), 
-                   on="CountryId", how="left")
+            leads.groupby("CountryId", dropna=True).size().reset_index(name="Leads")
+            .merge(countries[["CountryId","CountryName_E"]].rename(columns={"CountryName_E":"Country"}), on="CountryId", how="left")
         )
         total = float(bycountry["Leads"].sum())
         bycountry["Share"] = (bycountry["Leads"]/total*100.0).round(1) if total>0 else 0.0
-        top5 = bycountry.nlargest(5, ["Share", "Leads"])
-        
+        top5 = bycountry.sort_values(["Share","Leads"], ascending=False).head(5)
         st.subheader("Top markets")
         st.dataframe(
             top5[["Country","Leads","Share"]],
@@ -411,35 +421,40 @@ def show_executive_summary(d):
         return
 
     # Resolve Won status id
-    if 'won_status_id' not in st.session_state:
-        won_status_id = 9
-        if lead_statuses is not None and "StatusName_E" in lead_statuses.columns:
-            m = lead_statuses.loc[lead_statuses["StatusName_E"].str.lower() == "won"]
-            if not m.empty and "LeadStatusId" in m.columns:
-                won_status_id = int(m.iloc[0]["LeadStatusId"])
-        st.session_state.won_status_id = won_status_id
-    else:
-        won_status_id = st.session_state.won_status_id
+    won_status_id = 9
+    if lead_statuses is not None and "StatusName_E" in lead_statuses.columns:
+        m = lead_statuses.loc[lead_statuses["StatusName_E"].str.lower() == "won"]
+        if not m.empty and "LeadStatusId" in m.columns:
+            won_status_id = int(m.iloc[0]["LeadStatusId"])
 
     st.subheader("Performance KPIs")
 
-    # Get date range from session state (set by nav filter) or defaults
-    if 'date_from' in st.session_state and 'date_to' in st.session_state:
-        date_from = st.session_state.date_from
-        date_to = st.session_state.date_to
+    # Date slicer
+    c1, c2, c3 = st.columns([1, 1, 2])
+    if "CreatedOn" in leads_all.columns:
+        all_dates = pd.to_datetime(leads_all["CreatedOn"], errors="coerce").dropna()
+        gmin = all_dates.min().date() if len(all_dates) else date.today() - timedelta(days=365)
+        gmax = all_dates.max().date() if len(all_dates) else date.today()
     else:
-        # Default to last 30 days
-        today = date.today()
-        date_from = today - timedelta(days=30)
-        date_to = today
-        st.session_state.date_from = date_from
-        st.session_state.date_to = date_to
+        gmin = date.today() - timedelta(days=365)
+        gmax = date.today()
+
+    with c1:
+        date_from = st.date_input("From Date", value=gmin, min_value=gmin, max_value=gmax, key="date_from")
+    with c2:
+        date_to = st.date_input("To Date", value=gmax, min_value=gmin, max_value=gmax, key="date_to")
+    with c3:
+        st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
+        if st.button("Apply Date Range", type="primary"):
+            st.rerun()
+
+    st.markdown("---")
 
     # WTD/MTD/YTD calculations
-    today_ts = pd.Timestamp.today().normalize()
-    week_start_wtd = today_ts - pd.Timedelta(days=today_ts.weekday())
-    month_start_mtd = today_ts.replace(day=1)
-    year_start_ytd = today_ts.replace(month=1, day=1)
+    today = pd.Timestamp.today().normalize()
+    week_start_wtd = today - pd.Timedelta(days=today.weekday())
+    month_start_mtd = today.replace(day=1)
+    year_start_ytd = today.replace(month=1, day=1)
 
     meetings_all = d.get("agent_meeting_assignment")
 
@@ -455,6 +470,8 @@ def show_executive_summary(d):
             if "StartDateTime" in m.columns:
                 m["dt"] = pd.to_datetime(m["StartDateTime"], errors="coerce")
                 m = m[(m["dt"] >= start_ts) & (m["dt"] <= end_ts)]
+                if "MeetingStatusId" in m.columns:
+                    m = m[m["MeetingStatusId"].isin({1, 6})]
                 mp = m
             else:
                 mp = pd.DataFrame()
@@ -468,9 +485,9 @@ def show_executive_summary(d):
         return total, conv_pct, meet, won
 
     # Get metrics
-    week_total, week_conv, week_meet, week_won = metrics_full_dataset(week_start_wtd, today_ts)
-    month_total, month_conv, month_meet, month_won = metrics_full_dataset(month_start_mtd, today_ts)
-    year_total, year_conv, year_meet, year_won = metrics_full_dataset(year_start_ytd, today_ts)
+    week_total, week_conv, week_meet, week_won = metrics_full_dataset(week_start_wtd, today)
+    month_total, month_conv, month_meet, month_won = metrics_full_dataset(month_start_mtd, today)
+    year_total, year_conv, year_meet, year_won = metrics_full_dataset(year_start_ytd, today)
 
     # Format large numbers
     def format_number(num):
@@ -584,11 +601,9 @@ def show_executive_summary(d):
 
     start_day = pd.Timestamp(date_from)
     end_day = pd.Timestamp(date_to)
-    
     if "CreatedOn" in leads_all.columns:
         created = pd.to_datetime(leads_all["CreatedOn"], errors="coerce")
-        mask = (created.dt.date >= start_day.date()) & (created.dt.date <= end_day.date())
-        filtered_leads = leads_all.loc[mask].copy()
+        filtered_leads = leads_all.loc[(created.dt.date >= start_day.date()) & (created.dt.date <= end_day.date())].copy()
     else:
         filtered_leads = leads_all.copy()
 
@@ -602,7 +617,7 @@ def show_executive_summary(d):
         else:
             leads_local["period"] = dt.dt.to_period("Y").apply(lambda p: p.start_time.date())
 
-    leads_ts = leads_local.groupby("period", as_index=False).size().rename(columns={"size": "value"}) if "period" in leads_local.columns else pd.DataFrame({"period":[],"value":[]})
+    leads_ts = leads_local.groupby("period").size().reset_index(name="value") if "period" in leads_local.columns else pd.DataFrame({"period":[],"value":[]})
     
     if "LeadStatusId" in leads_local.columns and "period" in leads_local.columns:
         per_total = leads_local.groupby("period").size()
@@ -625,7 +640,8 @@ def show_executive_summary(d):
                 m["period"] = m["dt"].dt.to_period("M").apply(lambda p: p.start_time.date())
             else:
                 m["period"] = m["dt"].dt.to_period("Y").apply(lambda p: p.start_time.date())
-            meet_ts = m.groupby("period", as_index=False)["LeadId"].nunique().rename(columns={"LeadId": "value"})
+            if "MeetingStatusId" in m.columns: m = m[m["MeetingStatusId"].isin({1,6})]
+            meet_ts = m.groupby("period")["LeadId"].nunique().reset_index(name="value")
         else:
             meet_ts = pd.DataFrame({"period":[],"value":[]})
     else:
@@ -783,26 +799,25 @@ def show_lead_status(d):
     meet_rate = pd.DataFrame({"Status":pd.Series(dtype="str"), "meet_leads":pd.Series(dtype="float")})
     if meets is not None and len(meets):
         M = meets.copy()
-        if "LeadId" in M.columns:
+        if "MeetingStatusId" in M.columns and "LeadId" in M.columns:
+            M = M[M["MeetingStatusId"].isin({1,6})]
             mm = M.merge(L[["LeadId","Status"]], on="LeadId", how="left")
-            meet_rate = mm.groupby("Status", as_index=False)["LeadId"].nunique().rename(columns={"LeadId": "meet_leads"})
+            meet_rate = mm.groupby("Status")["LeadId"].nunique().reset_index(name="meet_leads")
 
     conn_rate = pd.DataFrame({"Status":pd.Series(dtype="str"), "connect_rate":pd.Series(dtype="float")})
     if calls is not None and len(calls):
         C = calls.copy()
         C["CallDateTime"] = pd.to_datetime(C.get("CallDateTime"), errors="coerce")
         C = C.merge(L[["LeadId","Status"]], on="LeadId", how="left")
-        g = C.groupby("Status", as_index=False).agg(
-            total=("LeadCallId","count"),
-            connects=("CallStatusId", lambda s: (s==1).sum())
-        )
+        g = C.groupby("Status").agg(total=("LeadCallId","count"),
+                                    connects=("CallStatusId", lambda s: (s==1).sum())).reset_index()
         g["connect_rate"] = (g["connects"]/g["total"]).fillna(0.0)
         conn_rate = g[["Status","connect_rate"]]
 
-    base = L.groupby("Status", as_index=False).agg(
+    base = L.groupby("Status").agg(
         Leads=("LeadId","count"),
         Avg_Age_Days=("age_days","mean")
-    )
+    ).reset_index()
     
     total_leads = float(base["Leads"].sum()) if len(base) else 0.0
     base["Share_%"] = (base["Leads"]/total_leads*100.0).round(1) if total_leads>0 else 0.0
@@ -827,7 +842,7 @@ def show_lead_status(d):
         }
     )
 
-# Navigation with COMPACT Date Filter on the right
+# Navigation
 fdata = data
 
 NAV = [
@@ -836,137 +851,22 @@ NAV = [
 ]
 
 if HAS_OPTION_MENU:
-    # Create container for nav and date filter in same row
-    nav_col, filter_col = st.columns([4, 0.8])
-    
-    with nav_col:
-        selected = option_menu(
-            None, [n[0] for n in NAV], icons=[n[1] for n in NAV],
-            orientation="horizontal", default_index=0,
-            styles={
-                "container": {"padding":"0!important","background-color": BG_PAGE},
-                "icon": {"color": PRIMARY_GOLD, "font-size": "16px"},
-                "nav-link": {"font-size": "14px", "color": TEXT_MUTED, "--hover-color": "#EEF2FF"},
-                "nav-link-selected": {"background-color": BG_SURFACE, "color": TEXT_MAIN, "border-bottom": f"2px solid {PRIMARY_GOLD}"},
-            }
-        )
-    
-    with filter_col:
-        st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
-        if st.button("📅 Filter", type="secondary", use_container_width=True, key="toggle_date_filter"):
-            st.session_state.show_date_filter = not st.session_state.get('show_date_filter', False)
-    
-    # Show date filter popup if toggled
-    if st.session_state.get('show_date_filter', False):
-        with st.container(border=True):
-            filter_type = st.radio(
-                "Select Time Period",
-                ["Week", "Month", "Year", "Custom"],
-                horizontal=True,
-                key="date_filter_type_nav"
-            )
-            
-            today = date.today()
-            
-            if filter_type == "Week":
-                st.session_state.date_from = today - timedelta(days=7)
-                st.session_state.date_to = today
-                st.info(f"📊 Last 7 days: {st.session_state.date_from.strftime('%Y-%m-%d')} to {st.session_state.date_to.strftime('%Y-%m-%d')}")
-                
-            elif filter_type == "Month":
-                st.session_state.date_from = today - timedelta(days=30)
-                st.session_state.date_to = today
-                st.info(f"📊 Last 30 days: {st.session_state.date_from.strftime('%Y-%m-%d')} to {st.session_state.date_to.strftime('%Y-%m-%d')}")
-                
-            elif filter_type == "Year":
-                st.session_state.date_from = today - timedelta(days=365)
-                st.session_state.date_to = today
-                st.info(f"📊 Last 365 days: {st.session_state.date_from.strftime('%Y-%m-%d')} to {st.session_state.date_to.strftime('%Y-%m-%d')}")
-                
-            else:  # Custom
-                c1, c2, c3 = st.columns([1, 1, 1])
-                
-                with c1:
-                    custom_from = st.date_input(
-                        "From Date", 
-                        value=st.session_state.get('date_from', today - timedelta(days=30)),
-                        key="custom_date_from_nav"
-                    )
-                
-                with c2:
-                    custom_to = st.date_input(
-                        "To Date", 
-                        value=st.session_state.get('date_to', today),
-                        key="custom_date_to_nav"
-                    )
-                
-                with c3:
-                    st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
-                    if st.button("Apply", type="primary", key="apply_custom_date_nav"):
-                        st.session_state.date_from = custom_from
-                        st.session_state.date_to = custom_to
-                        st.rerun()
-    
-    st.markdown("---")
-    
+    selected = option_menu(
+        None, [n[0] for n in NAV], icons=[n[1] for n in NAV],
+        orientation="horizontal", default_index=0,
+        styles={
+            "container": {"padding":"0!important","background-color": BG_PAGE},
+            "icon": {"color": PRIMARY_GOLD, "font-size": "16px"},
+            "nav-link": {"font-size": "14px", "color": TEXT_MUTED, "--hover-color": "#EEF2FF"},
+            "nav-link-selected": {"background-color": BG_SURFACE, "color": TEXT_MAIN, "border-bottom": f"2px solid {PRIMARY_GOLD}"},
+        }
+    )
     if selected == "Executive":
         show_executive_summary(fdata)
     elif selected == "Lead Status":
         show_lead_status(fdata)
-        
 else:
-    # Fallback for standard tabs
-    nav_col, filter_col = st.columns([4, 0.8])
-    
-    with nav_col:
-        tabs = st.tabs([n[2] for n in NAV])
-    
-    with filter_col:
-        st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
-        if st.button("📅 Filter", type="secondary", use_container_width=True, key="toggle_date_filter_fallback"):
-            st.session_state.show_date_filter = not st.session_state.get('show_date_filter', False)
-    
-    if st.session_state.get('show_date_filter', False):
-        with st.container(border=True):
-            filter_type = st.radio(
-                "Select Time Period",
-                ["Week", "Month", "Year", "Custom"],
-                horizontal=True,
-                key="date_filter_type_fallback"
-            )
-            
-            today = date.today()
-            
-            if filter_type == "Week":
-                st.session_state.date_from = today - timedelta(days=7)
-                st.session_state.date_to = today
-                st.info(f"📊 Last 7 days")
-                
-            elif filter_type == "Month":
-                st.session_state.date_from = today - timedelta(days=30)
-                st.session_state.date_to = today
-                st.info(f"📊 Last 30 days")
-                
-            elif filter_type == "Year":
-                st.session_state.date_from = today - timedelta(days=365)
-                st.session_state.date_to = today
-                st.info(f"📊 Last 365 days")
-                
-            else:
-                c1, c2, c3 = st.columns([1, 1, 1])
-                with c1:
-                    custom_from = st.date_input("From Date", value=st.session_state.get('date_from', today - timedelta(days=30)), key="custom_from_fb")
-                with c2:
-                    custom_to = st.date_input("To Date", value=st.session_state.get('date_to', today), key="custom_to_fb")
-                with c3:
-                    st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
-                    if st.button("Apply", type="primary", key="apply_fb"):
-                        st.session_state.date_from = custom_from
-                        st.session_state.date_to = custom_to
-                        st.rerun()
-    
-    st.markdown("---")
-    
+    tabs = st.tabs([n[2] for n in NAV])
     with tabs[0]:
         show_executive_summary(fdata)
     with tabs[1]:
