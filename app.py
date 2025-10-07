@@ -158,7 +158,7 @@ def get_connection():
         st.error(f"❌ Database connection failed: {e}")
         return None, None
 
-# Optimized data loading
+# Optimized data loading - FIXED: Removed INDEX hints and NOLOCK
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_lookup_tables(_conn, _runner):
     """Load static reference tables (cached for 1 hour)"""
@@ -198,13 +198,14 @@ def load_lookup_tables(_conn, _runner):
 
 @st.cache_data(ttl=60, show_spinner=False)
 def load_transactional_data(_conn, _runner):
-    """Load frequently changing data (cached for 1 minute)"""
+    """Load frequently changing data (cached for 1 minute) - FIXED"""
     
     def q(sql):
         if _conn:
             return _conn.query(sql, ttl=60)
         return _runner(sql)
     
+    # Simplified queries without SQL Server-specific hints
     leads = q("""
         SELECT 
             LeadId, LeadCode, LeadStageId, LeadStatusId, LeadScoringId,
@@ -401,7 +402,7 @@ def render_funnel_and_markets(d):
     else:
         st.info("Country data unavailable.")
 
-# Executive summary - Date filter removed (now in navigation)
+# Executive summary with collapsible date filter
 def show_executive_summary(d):
     leads_all = d.get("leads")
     lead_statuses = d.get("lead_statuses")
@@ -423,17 +424,69 @@ def show_executive_summary(d):
 
     st.subheader("Performance KPIs")
 
-    # Get date range from session state (set by nav filter) or defaults
-    if 'date_from' in st.session_state and 'date_to' in st.session_state:
-        date_from = st.session_state.date_from
-        date_to = st.session_state.date_to
+    # Get date range from data
+    if "CreatedOn" in leads_all.columns:
+        all_dates = pd.to_datetime(leads_all["CreatedOn"], errors="coerce").dropna()
+        gmin = all_dates.min().date() if len(all_dates) else date.today() - timedelta(days=365)
+        gmax = all_dates.max().date() if len(all_dates) else date.today()
     else:
-        # Default to last 30 days
+        gmin = date.today() - timedelta(days=365)
+        gmax = date.today()
+
+    # Collapsible date filter with preset options
+    with st.expander("📅 Date Filter", expanded=False):
+        filter_type = st.radio(
+            "Select Time Period",
+            ["Week", "Month", "Year", "Custom"],
+            horizontal=True,
+            key="date_filter_type"
+        )
+        
         today = date.today()
-        date_from = today - timedelta(days=30)
-        date_to = today
-        st.session_state.date_from = date_from
-        st.session_state.date_to = date_to
+        
+        if filter_type == "Week":
+            date_from = today - timedelta(days=7)
+            date_to = today
+            st.info(f"last 7 days: {date_from.strftime('%Y-%m-%d')} to {date_to.strftime('%Y-%m-%d')}")
+            
+        elif filter_type == "Month":
+            date_from = today - timedelta(days=30)
+            date_to = today
+            st.info(f"last 30 days: {date_from.strftime('%Y-%m-%d')} to {date_to.strftime('%Y-%m-%d')}")
+            
+        elif filter_type == "Year":
+            date_from = today - timedelta(days=365)
+            date_to = today
+            st.info(f"last 365 days: {date_from.strftime('%Y-%m-%d')} to {date_to.strftime('%Y-%m-%d')}")
+            
+        else:  # Custom
+            st.markdown("### Custom Date Range")
+            c1, c2, c3 = st.columns([1, 1, 1])
+            
+            with c1:
+                date_from = st.date_input(
+                    "From Date", 
+                    value=gmin, 
+                    min_value=gmin, 
+                    max_value=gmax, 
+                    key="custom_date_from"
+                )
+            
+            with c2:
+                date_to = st.date_input(
+                    "To Date", 
+                    value=gmax, 
+                    min_value=gmin, 
+                    max_value=gmax, 
+                    key="custom_date_to"
+                )
+            
+            with c3:
+                st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
+                if st.button("Apply Custom Range", type="primary", key="apply_custom_date"):
+                    st.rerun()
+
+    st.markdown("---")
 
     # WTD/MTD/YTD calculations
     today_ts = pd.Timestamp.today().normalize()
@@ -827,7 +880,7 @@ def show_lead_status(d):
         }
     )
 
-# Navigation with Date Filter on the right
+# Navigation
 fdata = data
 
 NAV = [
@@ -836,137 +889,22 @@ NAV = [
 ]
 
 if HAS_OPTION_MENU:
-    # Create container for nav and date filter in same row
-    nav_col, filter_col = st.columns([3.5, 1])
-    
-    with nav_col:
-        selected = option_menu(
-            None, [n[0] for n in NAV], icons=[n[1] for n in NAV],
-            orientation="horizontal", default_index=0,
-            styles={
-                "container": {"padding":"0!important","background-color": BG_PAGE},
-                "icon": {"color": PRIMARY_GOLD, "font-size": "16px"},
-                "nav-link": {"font-size": "14px", "color": TEXT_MUTED, "--hover-color": "#EEF2FF"},
-                "nav-link-selected": {"background-color": BG_SURFACE, "color": TEXT_MAIN, "border-bottom": f"2px solid {PRIMARY_GOLD}"},
-            }
-        )
-    
-    with filter_col:
-        st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
-        if st.button("📅 Date Filter", type="secondary", use_container_width=True, key="toggle_date_filter"):
-            st.session_state.show_date_filter = not st.session_state.get('show_date_filter', False)
-    
-    # Show date filter popup if toggled
-    if st.session_state.get('show_date_filter', False):
-        with st.container(border=True):
-            filter_type = st.radio(
-                "Select Time Period",
-                ["Week", "Month", "Year", "Custom"],
-                horizontal=True,
-                key="date_filter_type_nav"
-            )
-            
-            today = date.today()
-            
-            if filter_type == "Week":
-                st.session_state.date_from = today - timedelta(days=7)
-                st.session_state.date_to = today
-                st.info(f"📊 Last 7 days: {st.session_state.date_from.strftime('%Y-%m-%d')} to {st.session_state.date_to.strftime('%Y-%m-%d')}")
-                
-            elif filter_type == "Month":
-                st.session_state.date_from = today - timedelta(days=30)
-                st.session_state.date_to = today
-                st.info(f"📊 Last 30 days: {st.session_state.date_from.strftime('%Y-%m-%d')} to {st.session_state.date_to.strftime('%Y-%m-%d')}")
-                
-            elif filter_type == "Year":
-                st.session_state.date_from = today - timedelta(days=365)
-                st.session_state.date_to = today
-                st.info(f"📊 Last 365 days: {st.session_state.date_from.strftime('%Y-%m-%d')} to {st.session_state.date_to.strftime('%Y-%m-%d')}")
-                
-            else:  # Custom
-                c1, c2, c3 = st.columns([1, 1, 1])
-                
-                with c1:
-                    custom_from = st.date_input(
-                        "From Date", 
-                        value=st.session_state.get('date_from', today - timedelta(days=30)),
-                        key="custom_date_from_nav"
-                    )
-                
-                with c2:
-                    custom_to = st.date_input(
-                        "To Date", 
-                        value=st.session_state.get('date_to', today),
-                        key="custom_date_to_nav"
-                    )
-                
-                with c3:
-                    st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
-                    if st.button("Apply", type="primary", key="apply_custom_date_nav"):
-                        st.session_state.date_from = custom_from
-                        st.session_state.date_to = custom_to
-                        st.rerun()
-    
-    st.markdown("---")
-    
+    selected = option_menu(
+        None, [n[0] for n in NAV], icons=[n[1] for n in NAV],
+        orientation="horizontal", default_index=0,
+        styles={
+            "container": {"padding":"0!important","background-color": BG_PAGE},
+            "icon": {"color": PRIMARY_GOLD, "font-size": "16px"},
+            "nav-link": {"font-size": "14px", "color": TEXT_MUTED, "--hover-color": "#EEF2FF"},
+            "nav-link-selected": {"background-color": BG_SURFACE, "color": TEXT_MAIN, "border-bottom": f"2px solid {PRIMARY_GOLD}"},
+        }
+    )
     if selected == "Executive":
         show_executive_summary(fdata)
     elif selected == "Lead Status":
         show_lead_status(fdata)
-        
 else:
-    # Fallback for standard tabs
-    nav_col, filter_col = st.columns([3.5, 1])
-    
-    with nav_col:
-        tabs = st.tabs([n[2] for n in NAV])
-    
-    with filter_col:
-        st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
-        if st.button("📅 Date Filter", type="secondary", use_container_width=True, key="toggle_date_filter_fallback"):
-            st.session_state.show_date_filter = not st.session_state.get('show_date_filter', False)
-    
-    if st.session_state.get('show_date_filter', False):
-        with st.container(border=True):
-            filter_type = st.radio(
-                "Select Time Period",
-                ["Week", "Month", "Year", "Custom"],
-                horizontal=True,
-                key="date_filter_type_fallback"
-            )
-            
-            today = date.today()
-            
-            if filter_type == "Week":
-                st.session_state.date_from = today - timedelta(days=7)
-                st.session_state.date_to = today
-                st.info(f"📊 Last 7 days")
-                
-            elif filter_type == "Month":
-                st.session_state.date_from = today - timedelta(days=30)
-                st.session_state.date_to = today
-                st.info(f"📊 Last 30 days")
-                
-            elif filter_type == "Year":
-                st.session_state.date_from = today - timedelta(days=365)
-                st.session_state.date_to = today
-                st.info(f"📊 Last 365 days")
-                
-            else:
-                c1, c2, c3 = st.columns([1, 1, 1])
-                with c1:
-                    custom_from = st.date_input("From Date", value=st.session_state.get('date_from', today - timedelta(days=30)), key="custom_from_fb")
-                with c2:
-                    custom_to = st.date_input("To Date", value=st.session_state.get('date_to', today), key="custom_to_fb")
-                with c3:
-                    st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
-                    if st.button("Apply", type="primary", key="apply_fb"):
-                        st.session_state.date_from = custom_from
-                        st.session_state.date_to = custom_to
-                        st.rerun()
-    
-    st.markdown("---")
-    
+    tabs = st.tabs([n[2] for n in NAV])
     with tabs[0]:
         show_executive_summary(fdata)
     with tabs[1]:
