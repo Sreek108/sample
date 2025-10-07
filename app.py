@@ -998,47 +998,63 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
         st.markdown("---")
         st.subheader("👥 Agent Performance by Status")
         
-        # DEBUG: Check which agent column exists
-        agent_column = None
-        for col_name in ["AssignedAgentId", "AgentId", "AssignedTo", "OwnerId"]:
-            if col_name in L.columns:
-                agent_column = col_name
-                break
-        
-        if agent_column and not L[agent_column].isna().all():
-            # Calculate agent stats
-            agent_stats = L.groupby(agent_column).agg(
-                Total_Leads=("LeadId", "count"),
-                Won_Leads=("LeadStatusId", lambda x: (x == won_status_id).sum()),
-                Avg_Days=("age_days", "mean")
-            ).reset_index()
+        # Check if AssignedAgentId has valid data
+        if "AssignedAgentId" in L.columns:
+            # Remove NULL and 0 values
+            L_with_agents = L[(L["AssignedAgentId"].notna()) & (L["AssignedAgentId"] != 0)].copy()
             
-            agent_stats["Conversion_Rate"] = (agent_stats["Won_Leads"] / agent_stats["Total_Leads"] * 100).round(1)
-            agent_stats["Avg_Days"] = agent_stats["Avg_Days"].round(1)
-            agent_stats = agent_stats.sort_values("Conversion_Rate", ascending=False).head(10)
-            
-            agent_stats["Performance"] = agent_stats["Conversion_Rate"].apply(
-                lambda x: '🟢 High' if x >= 5.0 else ('🟡 Medium' if x >= 2.0 else '🔴 Low')
-            )
-            
-            # Rename for display
-            agent_stats = agent_stats.rename(columns={agent_column: "Agent_ID"})
-            
-            st.dataframe(
-                agent_stats,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Agent_ID": st.column_config.TextColumn("Agent ID"),
-                    "Total_Leads": st.column_config.NumberColumn("Total Leads", format="%d"),
-                    "Won_Leads": st.column_config.NumberColumn("Won", format="%d"),
-                    "Conversion_Rate": st.column_config.ProgressColumn("Conversion Rate", format="%.1f%%", min_value=0, max_value=20),
-                    "Avg_Days": st.column_config.NumberColumn("Avg Days", format="%.1f"),
-                    "Performance": st.column_config.TextColumn("Performance")
-                }
-            )
+            if len(L_with_agents) > 0:
+                # Calculate agent stats
+                agent_stats = L_with_agents.groupby("AssignedAgentId").agg(
+                    Total_Leads=("LeadId", "count"),
+                    Won_Leads=("LeadStatusId", lambda x: (x == won_status_id).sum()),
+                    Avg_Days=("age_days", "mean")
+                ).reset_index()
+                
+                agent_stats["Conversion_Rate"] = (agent_stats["Won_Leads"] / agent_stats["Total_Leads"] * 100).round(1)
+                agent_stats["Avg_Days"] = agent_stats["Avg_Days"].round(1)
+                agent_stats = agent_stats.sort_values("Conversion_Rate", ascending=False).head(10)
+                
+                # Performance indicator
+                agent_stats["Performance"] = agent_stats["Conversion_Rate"].apply(
+                    lambda x: '🟢 High' if x >= 5.0 else ('🟡 Medium' if x >= 2.0 else '🔴 Low')
+                )
+                
+                # Rename for display
+                agent_stats = agent_stats.rename(columns={"AssignedAgentId": "Agent_ID"})
+                
+                st.dataframe(
+                    agent_stats,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Agent_ID": st.column_config.NumberColumn("Agent ID", format="%d"),
+                        "Total_Leads": st.column_config.NumberColumn("Total Leads", format="%d"),
+                        "Won_Leads": st.column_config.NumberColumn("Won", format="%d"),
+                        "Conversion_Rate": st.column_config.ProgressColumn(
+                            "Conversion Rate", 
+                            format="%.1f%%",
+                            min_value=0,
+                            max_value=20
+                        ),
+                        "Avg_Days": st.column_config.NumberColumn("Avg Days", format="%.1f"),
+                        "Performance": st.column_config.TextColumn("Performance")
+                    }
+                )
+                
+                # Show summary stats
+                total_with_agents = len(L_with_agents)
+                total_without_agents = len(L) - total_with_agents
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.metric("👥 Leads with Assigned Agents", f"{total_with_agents:,}")
+                with col_b:
+                    st.metric("❓ Unassigned Leads", f"{total_without_agents:,}")
+            else:
+                st.warning("⚠️ No leads have been assigned to agents yet. Please assign agents in your CRM system.")
+                st.info(f"📊 Total leads available for assignment: **{len(L):,}**")
         else:
-            st.info(f"👥 Agent assignment data not available. Available columns: {', '.join(L.columns.tolist())}")
+            st.error("❌ AssignedAgentId column not found in database")
 
         # ===== EXISTING FEATURES =====
         st.markdown("---")
