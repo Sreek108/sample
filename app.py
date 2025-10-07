@@ -828,7 +828,7 @@ def show_lead_status(d):
         }
     )
 
-# Navigation with POPOVER Date Filter
+# Navigation with COMPACT Date Filter (REDUCED SPACE)
 fdata = data
 
 NAV = [
@@ -837,8 +837,8 @@ NAV = [
 ]
 
 if HAS_OPTION_MENU:
-    # Create container for nav and date filter in same row
-    nav_col, filter_col = st.columns([4, 0.8])
+    # CHANGED: Reduced filter column width from [4, 0.8] to [5.5, 0.5]
+    nav_col, filter_col = st.columns([5.5, 0.5])
     
     with nav_col:
         selected = option_menu(
@@ -855,12 +855,12 @@ if HAS_OPTION_MENU:
     with filter_col:
         st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
         
-        # Use popover to show filter menu below the button
-        with st.popover("📅 Filter", use_container_width=True):
-            st.markdown("### Date Filter Options")
+        # CHANGED: Just icon "📅" instead of "📅 Filter"
+        with st.popover("📅", use_container_width=True):
+            st.markdown("### 📅 Date Filter")
             
             filter_type = st.radio(
-                "Select Time Period",
+                "Time Period",
                 ["Week", "Month", "Year", "Custom"],
                 horizontal=False,
                 key="date_filter_type_nav"
@@ -885,22 +885,24 @@ if HAS_OPTION_MENU:
                 
             else:  # Custom
                 st.markdown("#### Custom Range")
+                # CHANGED: Shorter labels
                 custom_from = st.date_input(
-                    "From Date", 
+                    "From", 
                     value=st.session_state.get('date_from', today - timedelta(days=30)),
                     key="custom_date_from_nav"
                 )
                 
                 custom_to = st.date_input(
-                    "To Date", 
+                    "To", 
                     value=st.session_state.get('date_to', today),
                     key="custom_date_to_nav"
                 )
                 
-                if st.button("Apply Custom Range", type="primary", use_container_width=True, key="apply_custom_date_nav"):
+                # CHANGED: Shorter button text
+                if st.button("Apply", type="primary", use_container_width=True, key="apply_custom_date_nav"):
                     st.session_state.date_from = custom_from
                     st.session_state.date_to = custom_to
-                    st.success(f"✅ Applied: {custom_from} to {custom_to}")
+                    st.success(f"✅ Applied")
                     st.rerun()
     
     st.markdown("---")
@@ -912,7 +914,7 @@ if HAS_OPTION_MENU:
         
 else:
     # Fallback for standard tabs
-    nav_col, filter_col = st.columns([4, 0.8])
+    nav_col, filter_col = st.columns([5.5, 0.5])
     
     with nav_col:
         tabs = st.tabs([n[2] for n in NAV])
@@ -920,11 +922,11 @@ else:
     with filter_col:
         st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
         
-        with st.popover("📅 Filter", use_container_width=True):
-            st.markdown("### Date Filter Options")
+        with st.popover("📅", use_container_width=True):
+            st.markdown("### 📅 Date Filter")
             
             filter_type = st.radio(
-                "Select Time Period",
+                "Time Period",
                 ["Week", "Month", "Year", "Custom"],
                 horizontal=False,
                 key="date_filter_type_fallback"
@@ -949,13 +951,13 @@ else:
                 
             else:
                 st.markdown("#### Custom Range")
-                custom_from = st.date_input("From Date", value=st.session_state.get('date_from', today - timedelta(days=30)), key="custom_from_fb")
-                custom_to = st.date_input("To Date", value=st.session_state.get('date_to', today), key="custom_to_fb")
+                custom_from = st.date_input("From", value=st.session_state.get('date_from', today - timedelta(days=30)), key="custom_from_fb")
+                custom_to = st.date_input("To", value=st.session_state.get('date_to', today), key="custom_to_fb")
                 
-                if st.button("Apply Custom Range", type="primary", use_container_width=True, key="apply_fb"):
+                if st.button("Apply", type="primary", use_container_width=True, key="apply_fb"):
                     st.session_state.date_from = custom_from
                     st.session_state.date_to = custom_to
-                    st.success(f"✅ Applied: {custom_from} to {custom_to}")
+                    st.success(f"✅ Applied")
                     st.rerun()
     
     st.markdown("---")
