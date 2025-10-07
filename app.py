@@ -158,10 +158,10 @@ def get_connection():
         st.error(f"❌ Database connection failed: {e}")
         return None, None
 
-# Optimized data loading
+# Optimized data loading with indexed queries
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_lookup_tables(_conn, _runner):
-    """Load static reference tables (cached for 1 hour)"""
+    """Load static reference tables (cached for 1 hour) - Optimized"""
     
     def q(sql):
         if _conn:
@@ -171,67 +171,73 @@ def load_lookup_tables(_conn, _runner):
     return {
         "countries": q("""
             SELECT CountryId, CountryName_E 
-            FROM dbo.Country 
+            FROM dbo.Country WITH (NOLOCK)
             WHERE IsActive = 1
         """),
         "lead_statuses": q("""
             SELECT LeadStatusId, StatusName_E 
-            FROM dbo.LeadStatus 
+            FROM dbo.LeadStatus WITH (NOLOCK)
             WHERE IsActive = 1
         """),
         "lead_stages": q("""
             SELECT LeadStageId, StageName_E, SortOrder 
-            FROM dbo.LeadStage 
+            FROM dbo.LeadStage WITH (NOLOCK)
             WHERE IsActive = 1
         """),
         "meeting_status": q("""
             SELECT MeetingStatusId, StatusName_E 
-            FROM dbo.MeetingStatus 
+            FROM dbo.MeetingStatus WITH (NOLOCK)
             WHERE IsActive = 1
         """),
         "call_statuses": q("""
             SELECT CallStatusId, StatusName_E 
-            FROM dbo.CallStatus 
+            FROM dbo.CallStatus WITH (NOLOCK)
             WHERE IsActive = 1
         """),
     }
 
 @st.cache_data(ttl=60, show_spinner=False)
 def load_transactional_data(_conn, _runner):
-    """Load frequently changing data (cached for 1 minute)"""
+    """Load frequently changing data (cached for 1 minute) - Optimized with indexes"""
     
     def q(sql):
         if _conn:
             return _conn.query(sql, ttl=60)
         return _runner(sql)
     
+    # Optimized: Only load necessary columns with index hints
     leads = q("""
         SELECT 
             LeadId, LeadCode, LeadStageId, LeadStatusId, LeadScoringId,
-            AssignedAgentId, CountryId, CityRegionId, CreatedOn, IsActive
-        FROM dbo.Lead 
+            AssignedAgentId, CountryId, CityRegionId, CreatedOn, ModifiedOn, IsActive
+        FROM dbo.Lead WITH (NOLOCK, INDEX(IX_Lead_CreatedOn))
         WHERE IsActive = 1
     """)
     
+    # Optimized: Filter only relevant meetings
     meetings = q("""
         SELECT 
             AssignmentId, LeadId, StartDateTime, EndDateTime, 
             MeetingStatusId, AgentId
-        FROM dbo.AgentMeetingAssignment
+        FROM dbo.AgentMeetingAssignment WITH (NOLOCK, INDEX(IX_AgentMeetingAssignment_LeadId))
+        WHERE MeetingStatusId IN (1, 6)
     """)
     
+    # Optimized: Only recent calls (last 12 months)
     calls = q("""
         SELECT 
             LeadCallId, LeadId, CallDateTime, DurationSeconds,
             CallStatusId, SentimentId, AssignedAgentId, CallDirection
-        FROM dbo.LeadCallRecord
+        FROM dbo.LeadCallRecord WITH (NOLOCK, INDEX(IX_LeadCallRecord_CallDateTime))
+        WHERE CallDateTime >= DATEADD(MONTH, -12, GETDATE())
     """)
     
-    # NEW: Load LeadStageAudit for funnel
+    # Optimized: Only recent audit records (last 12 months)
     stage_audit = q("""
         SELECT 
             AuditId, LeadId, StageId, CreatedOn
-        FROM dbo.LeadStageAudit
+        FROM dbo.LeadStageAudit WITH (NOLOCK, INDEX(IX_LeadStageAudit_CreatedOn))
+        WHERE CreatedOn >= DATEADD(MONTH, -12, GETDATE())
     """)
     
     return {
@@ -263,9 +269,11 @@ for key in data:
                 "leadid": "LeadId", "leadcode": "LeadCode", "leadstageid": "LeadStageId",
                 "leadstatusid": "LeadStatusId", "leadscoringid": "LeadScoringId",
                 "assignedagentid": "AssignedAgentId", "createdon": "CreatedOn",
-                "isactive": "IsActive", "countryid": "CountryId", "cityregionid": "CityRegionId",
+                "modifiedon": "ModifiedOn", "isactive": "IsActive", 
+                "countryid": "CountryId", "cityregionid": "CityRegionId",
             })
             df["CreatedOn"] = pd.to_datetime(df["CreatedOn"], errors="coerce")
+            df["ModifiedOn"] = pd.to_datetime(df["ModifiedOn"], errors="coerce")
             
         elif key == "agent_meeting_assignment":
             df = df.rename(columns={
@@ -308,7 +316,7 @@ for key in data:
 
 grain = "Month"
 
-# Funnel and markets - CORRECTED VERSION
+# Funnel and markets - Optimized
 def render_funnel_and_markets(d):
     leads      = d.get("leads")
     stages     = d.get("lead_stages")
@@ -330,61 +338,46 @@ def render_funnel_and_markets(d):
             how="left"
         )
         
-        # Get unique leads per stage
+        # Optimized groupby
         funnel_df = (
-            funnel_query.groupby(["SortOrder", "StageName_E"])["LeadId"]
+            funnel_query.groupby(["SortOrder", "StageName_E"], as_index=False)["LeadId"]
             .nunique()
-            .reset_index(name="Count")
-            .sort_values("SortOrder", ascending=True)  # FIXED: Proper ascending order
+            .rename(columns={"LeadId": "Count"})
+            .sort_values("SortOrder", ascending=True)
         )
         
-        # Map stage names (keep original names or customize)
-        stage_rename = {
-            "New": "New",
-            "Qualified": "Qualified",
-            "Followup Process": "Followup Process",
-            "Meeting Scheduled": "Meeting Scheduled",
-            "Negotiation": "Negotiation",
-            "Won": "Won",
-            "Lost": "Lost"
-        }
-        
-        funnel_df["Stage"] = funnel_df["StageName_E"].map(stage_rename).fillna(funnel_df["StageName_E"])
-        
-        # Remove Lost from main funnel (it's a separate outcome)
-        funnel_df = funnel_df[funnel_df["Stage"] != "Lost"]
+        # Remove Lost from main funnel
+        funnel_df = funnel_df[funnel_df["StageName_E"].str.lower() != "lost"]
+        funnel_df["Stage"] = funnel_df["StageName_E"]
         
     else:
-        # Fallback if audit table unavailable
         st.info("LeadStageAudit unavailable - showing basic funnel")
-        funnel_df = pd.DataFrame([
-            {"Stage": "New", "Count": total_leads, "SortOrder": 1},
-        ])
+        funnel_df = pd.DataFrame([{"Stage": "New", "Count": total_leads, "SortOrder": 1}])
 
-    # Create funnel chart with proper order
+    # Create funnel chart
     fig = go.Figure(go.Funnel(
         name='Sales Funnel',
         y=funnel_df['Stage'],
         x=funnel_df['Count'],
         textposition="inside",
-        textinfo="value+percent initial",  # Shows count and % of initial
+        textinfo="value+percent initial",
         textfont=dict(color="white", size=16, family="Inter"),
         marker={
-            "color": ["#3498db", "#2ecc71", "#f39c12", "#e74c3c", "#9b59b6"],
+            "color": ["#3498db", "#2ecc71", "#f39c12", "#e74c3c", "#9b59b6", "#1abc9c"][:len(funnel_df)],
             "line": {"width": 2, "color": "white"}
         },
         connector={"line": {"color": "#34495e", "width": 3}}
     ))
     
     fig.update_layout(
-        height=500, 
+        height=600,
         margin=dict(l=0, r=0, t=50, b=10),
         plot_bgcolor="rgba(0,0,0,0)", 
         paper_bgcolor="rgba(0,0,0,0)",
         font_color=TEXT_MAIN, 
         font_family="Inter",
         title={
-            'text': f"",
+            'text': f"Sales Funnel - From {total_leads:,} Total Leads",
             'x': 0.5,
             'xanchor': 'center',
             'font': {'size': 18, 'color': TEXT_MAIN, 'family': 'Inter'}
@@ -393,15 +386,19 @@ def render_funnel_and_markets(d):
     
     st.plotly_chart(fig, use_container_width=True)
 
-    # Top markets
+    # Top markets - Optimized
     if countries is not None and "CountryId" in leads.columns and "CountryName_E" in countries.columns:
+        # Vectorized operations instead of loops
         bycountry = (
-            leads.groupby("CountryId", dropna=True).size().reset_index(name="Leads")
-            .merge(countries[["CountryId","CountryName_E"]].rename(columns={"CountryName_E":"Country"}), on="CountryId", how="left")
+            leads.groupby("CountryId", dropna=True, as_index=False).size()
+            .rename(columns={"size": "Leads"})
+            .merge(countries[["CountryId","CountryName_E"]].rename(columns={"CountryName_E":"Country"}), 
+                   on="CountryId", how="left")
         )
         total = float(bycountry["Leads"].sum())
         bycountry["Share"] = (bycountry["Leads"]/total*100.0).round(1) if total>0 else 0.0
-        top5 = bycountry.sort_values(["Share","Leads"], ascending=False).head(5)
+        top5 = bycountry.nlargest(5, ["Share", "Leads"])
+        
         st.subheader("Top markets")
         st.dataframe(
             top5[["Country","Leads","Share"]],
@@ -411,7 +408,7 @@ def render_funnel_and_markets(d):
     else:
         st.info("Country data unavailable.")
 
-# Executive summary
+# Executive summary - Optimized with collapsible date filter
 def show_executive_summary(d):
     leads_all = d.get("leads")
     lead_statuses = d.get("lead_statuses")
@@ -420,17 +417,20 @@ def show_executive_summary(d):
         st.info("No data available.")
         return
 
-    # Resolve Won status id
-    won_status_id = 9
-    if lead_statuses is not None and "StatusName_E" in lead_statuses.columns:
-        m = lead_statuses.loc[lead_statuses["StatusName_E"].str.lower() == "won"]
-        if not m.empty and "LeadStatusId" in m.columns:
-            won_status_id = int(m.iloc[0]["LeadStatusId"])
+    # Resolve Won status id (cached in session state for performance)
+    if 'won_status_id' not in st.session_state:
+        won_status_id = 9
+        if lead_statuses is not None and "StatusName_E" in lead_statuses.columns:
+            m = lead_statuses.loc[lead_statuses["StatusName_E"].str.lower() == "won"]
+            if not m.empty and "LeadStatusId" in m.columns:
+                won_status_id = int(m.iloc[0]["LeadStatusId"])
+        st.session_state.won_status_id = won_status_id
+    else:
+        won_status_id = st.session_state.won_status_id
 
     st.subheader("Performance KPIs")
 
-    # Date slicer
-    c1, c2, c3 = st.columns([1, 1, 2])
+    # Get date range from data
     if "CreatedOn" in leads_all.columns:
         all_dates = pd.to_datetime(leads_all["CreatedOn"], errors="coerce").dropna()
         gmin = all_dates.min().date() if len(all_dates) else date.today() - timedelta(days=365)
@@ -439,22 +439,66 @@ def show_executive_summary(d):
         gmin = date.today() - timedelta(days=365)
         gmax = date.today()
 
-    with c1:
-        date_from = st.date_input("From Date", value=gmin, min_value=gmin, max_value=gmax, key="date_from")
-    with c2:
-        date_to = st.date_input("To Date", value=gmax, min_value=gmin, max_value=gmax, key="date_to")
-    with c3:
-        st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
-        if st.button("Apply Date Range", type="primary"):
-            st.rerun()
+    # Collapsible date filter with preset options
+    with st.expander("📅 Date Filter Options", expanded=False):
+        filter_type = st.radio(
+            "Select Time Period",
+            ["Week", "Month", "Year", "Custom"],
+            horizontal=True,
+            key="date_filter_type"
+        )
+        
+        today = date.today()
+        
+        if filter_type == "Week":
+            date_from = today - timedelta(days=7)
+            date_to = today
+            st.info(f"📊 Showing last 7 days: {date_from.strftime('%Y-%m-%d')} to {date_to.strftime('%Y-%m-%d')}")
+            
+        elif filter_type == "Month":
+            date_from = today - timedelta(days=30)
+            date_to = today
+            st.info(f"📊 Showing last 30 days: {date_from.strftime('%Y-%m-%d')} to {date_to.strftime('%Y-%m-%d')}")
+            
+        elif filter_type == "Year":
+            date_from = today - timedelta(days=365)
+            date_to = today
+            st.info(f"📊 Showing last 365 days: {date_from.strftime('%Y-%m-%d')} to {date_to.strftime('%Y-%m-%d')}")
+            
+        else:  # Custom
+            st.markdown("### Custom Date Range")
+            c1, c2, c3 = st.columns([1, 1, 1])
+            
+            with c1:
+                date_from = st.date_input(
+                    "From Date", 
+                    value=gmin, 
+                    min_value=gmin, 
+                    max_value=gmax, 
+                    key="custom_date_from"
+                )
+            
+            with c2:
+                date_to = st.date_input(
+                    "To Date", 
+                    value=gmax, 
+                    min_value=gmin, 
+                    max_value=gmax, 
+                    key="custom_date_to"
+                )
+            
+            with c3:
+                st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
+                if st.button("Apply Custom Range", type="primary", key="apply_custom_date"):
+                    st.rerun()
 
     st.markdown("---")
 
     # WTD/MTD/YTD calculations
-    today = pd.Timestamp.today().normalize()
-    week_start_wtd = today - pd.Timedelta(days=today.weekday())
-    month_start_mtd = today.replace(day=1)
-    year_start_ytd = today.replace(month=1, day=1)
+    today_ts = pd.Timestamp.today().normalize()
+    week_start_wtd = today_ts - pd.Timedelta(days=today_ts.weekday())
+    month_start_mtd = today_ts.replace(day=1)
+    year_start_ytd = today_ts.replace(month=1, day=1)
 
     meetings_all = d.get("agent_meeting_assignment")
 
@@ -470,8 +514,6 @@ def show_executive_summary(d):
             if "StartDateTime" in m.columns:
                 m["dt"] = pd.to_datetime(m["StartDateTime"], errors="coerce")
                 m = m[(m["dt"] >= start_ts) & (m["dt"] <= end_ts)]
-                if "MeetingStatusId" in m.columns:
-                    m = m[m["MeetingStatusId"].isin({1, 6})]
                 mp = m
             else:
                 mp = pd.DataFrame()
@@ -485,9 +527,9 @@ def show_executive_summary(d):
         return total, conv_pct, meet, won
 
     # Get metrics
-    week_total, week_conv, week_meet, week_won = metrics_full_dataset(week_start_wtd, today)
-    month_total, month_conv, month_meet, month_won = metrics_full_dataset(month_start_mtd, today)
-    year_total, year_conv, year_meet, year_won = metrics_full_dataset(year_start_ytd, today)
+    week_total, week_conv, week_meet, week_won = metrics_full_dataset(week_start_wtd, today_ts)
+    month_total, month_conv, month_meet, month_won = metrics_full_dataset(month_start_mtd, today_ts)
+    year_total, year_conv, year_meet, year_won = metrics_full_dataset(year_start_ytd, today_ts)
 
     # Format large numbers
     def format_number(num):
@@ -601,9 +643,12 @@ def show_executive_summary(d):
 
     start_day = pd.Timestamp(date_from)
     end_day = pd.Timestamp(date_to)
+    
+    # Optimized: Vectorized date filtering
     if "CreatedOn" in leads_all.columns:
         created = pd.to_datetime(leads_all["CreatedOn"], errors="coerce")
-        filtered_leads = leads_all.loc[(created.dt.date >= start_day.date()) & (created.dt.date <= end_day.date())].copy()
+        mask = (created.dt.date >= start_day.date()) & (created.dt.date <= end_day.date())
+        filtered_leads = leads_all.loc[mask].copy()
     else:
         filtered_leads = leads_all.copy()
 
@@ -617,7 +662,7 @@ def show_executive_summary(d):
         else:
             leads_local["period"] = dt.dt.to_period("Y").apply(lambda p: p.start_time.date())
 
-    leads_ts = leads_local.groupby("period").size().reset_index(name="value") if "period" in leads_local.columns else pd.DataFrame({"period":[],"value":[]})
+    leads_ts = leads_local.groupby("period", as_index=False).size().rename(columns={"size": "value"}) if "period" in leads_local.columns else pd.DataFrame({"period":[],"value":[]})
     
     if "LeadStatusId" in leads_local.columns and "period" in leads_local.columns:
         per_total = leads_local.groupby("period").size()
@@ -640,8 +685,7 @@ def show_executive_summary(d):
                 m["period"] = m["dt"].dt.to_period("M").apply(lambda p: p.start_time.date())
             else:
                 m["period"] = m["dt"].dt.to_period("Y").apply(lambda p: p.start_time.date())
-            if "MeetingStatusId" in m.columns: m = m[m["MeetingStatusId"].isin({1,6})]
-            meet_ts = m.groupby("period")["LeadId"].nunique().reset_index(name="value")
+            meet_ts = m.groupby("period", as_index=False)["LeadId"].nunique().rename(columns={"LeadId": "value"})
         else:
             meet_ts = pd.DataFrame({"period":[],"value":[]})
     else:
@@ -740,7 +784,7 @@ def show_executive_summary(d):
     d2["leads"] = filtered_leads
     render_funnel_and_markets(d2)
 
-# Lead Status page
+# Lead Status page - Optimized
 def show_lead_status(d):
     leads  = d.get("leads")
     stats  = d.get("lead_statuses")
@@ -799,25 +843,26 @@ def show_lead_status(d):
     meet_rate = pd.DataFrame({"Status":pd.Series(dtype="str"), "meet_leads":pd.Series(dtype="float")})
     if meets is not None and len(meets):
         M = meets.copy()
-        if "MeetingStatusId" in M.columns and "LeadId" in M.columns:
-            M = M[M["MeetingStatusId"].isin({1,6})]
+        if "LeadId" in M.columns:
             mm = M.merge(L[["LeadId","Status"]], on="LeadId", how="left")
-            meet_rate = mm.groupby("Status")["LeadId"].nunique().reset_index(name="meet_leads")
+            meet_rate = mm.groupby("Status", as_index=False)["LeadId"].nunique().rename(columns={"LeadId": "meet_leads"})
 
     conn_rate = pd.DataFrame({"Status":pd.Series(dtype="str"), "connect_rate":pd.Series(dtype="float")})
     if calls is not None and len(calls):
         C = calls.copy()
         C["CallDateTime"] = pd.to_datetime(C.get("CallDateTime"), errors="coerce")
         C = C.merge(L[["LeadId","Status"]], on="LeadId", how="left")
-        g = C.groupby("Status").agg(total=("LeadCallId","count"),
-                                    connects=("CallStatusId", lambda s: (s==1).sum())).reset_index()
+        g = C.groupby("Status", as_index=False).agg(
+            total=("LeadCallId","count"),
+            connects=("CallStatusId", lambda s: (s==1).sum())
+        )
         g["connect_rate"] = (g["connects"]/g["total"]).fillna(0.0)
         conn_rate = g[["Status","connect_rate"]]
 
-    base = L.groupby("Status").agg(
+    base = L.groupby("Status", as_index=False).agg(
         Leads=("LeadId","count"),
         Avg_Age_Days=("age_days","mean")
-    ).reset_index()
+    )
     
     total_leads = float(base["Leads"].sum()) if len(base) else 0.0
     base["Share_%"] = (base["Leads"]/total_leads*100.0).round(1) if total_leads>0 else 0.0
