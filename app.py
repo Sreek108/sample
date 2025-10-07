@@ -227,7 +227,6 @@ def load_transactional_data(_conn, _runner):
         FROM dbo.LeadCallRecord
     """)
     
-    # NEW: Load LeadStageAudit for funnel
     stage_audit = q("""
         SELECT 
             AuditId, LeadId, StageId, CreatedOn
@@ -308,7 +307,7 @@ for key in data:
 
 grain = "Month"
 
-# Funnel and markets - CORRECTED VERSION
+# Funnel and markets
 def render_funnel_and_markets(d):
     leads      = d.get("leads")
     stages     = d.get("lead_stages")
@@ -330,15 +329,13 @@ def render_funnel_and_markets(d):
             how="left"
         )
         
-        # Get unique leads per stage
         funnel_df = (
             funnel_query.groupby(["SortOrder", "StageName_E"])["LeadId"]
             .nunique()
             .reset_index(name="Count")
-            .sort_values("SortOrder", ascending=True)  # FIXED: Proper ascending order
+            .sort_values("SortOrder", ascending=True)
         )
         
-        # Map stage names (keep original names or customize)
         stage_rename = {
             "New": "New",
             "Qualified": "Qualified",
@@ -350,24 +347,19 @@ def render_funnel_and_markets(d):
         }
         
         funnel_df["Stage"] = funnel_df["StageName_E"].map(stage_rename).fillna(funnel_df["StageName_E"])
-        
-        # Remove Lost from main funnel (it's a separate outcome)
         funnel_df = funnel_df[funnel_df["Stage"] != "Lost"]
         
     else:
-        # Fallback if audit table unavailable
         st.info("LeadStageAudit unavailable - showing basic funnel")
-        funnel_df = pd.DataFrame([
-            {"Stage": "New", "Count": total_leads, "SortOrder": 1},
-        ])
+        funnel_df = pd.DataFrame([{"Stage": "New", "Count": total_leads, "SortOrder": 1}])
 
-    # Create funnel chart with proper order
+    # Create funnel chart
     fig = go.Figure(go.Funnel(
         name='Sales Funnel',
         y=funnel_df['Stage'],
         x=funnel_df['Count'],
         textposition="inside",
-        textinfo="value+percent initial",  # Shows count and % of initial
+        textinfo="value+percent initial",
         textfont=dict(color="white", size=16, family="Inter"),
         marker={
             "color": ["#3498db", "#2ecc71", "#f39c12", "#e74c3c", "#9b59b6"],
@@ -421,34 +413,28 @@ def show_executive_summary(d):
         return
 
     # Resolve Won status id
-    won_status_id = 9
-    if lead_statuses is not None and "StatusName_E" in lead_statuses.columns:
-        m = lead_statuses.loc[lead_statuses["StatusName_E"].str.lower() == "won"]
-        if not m.empty and "LeadStatusId" in m.columns:
-            won_status_id = int(m.iloc[0]["LeadStatusId"])
+    if 'won_status_id' not in st.session_state:
+        won_status_id = 9
+        if lead_statuses is not None and "StatusName_E" in lead_statuses.columns:
+            m = lead_statuses.loc[lead_statuses["StatusName_E"].str.lower() == "won"]
+            if not m.empty and "LeadStatusId" in m.columns:
+                won_status_id = int(m.iloc[0]["LeadStatusId"])
+        st.session_state.won_status_id = won_status_id
+    else:
+        won_status_id = st.session_state.won_status_id
 
     st.subheader("Performance KPIs")
 
-    # Date slicer
-    c1, c2, c3 = st.columns([1, 1, 2])
-    if "CreatedOn" in leads_all.columns:
-        all_dates = pd.to_datetime(leads_all["CreatedOn"], errors="coerce").dropna()
-        gmin = all_dates.min().date() if len(all_dates) else date.today() - timedelta(days=365)
-        gmax = all_dates.max().date() if len(all_dates) else date.today()
+    # Get date range from session state or defaults
+    if 'date_from' in st.session_state and 'date_to' in st.session_state:
+        date_from = st.session_state.date_from
+        date_to = st.session_state.date_to
     else:
-        gmin = date.today() - timedelta(days=365)
-        gmax = date.today()
-
-    with c1:
-        date_from = st.date_input("From Date", value=gmin, min_value=gmin, max_value=gmax, key="date_from")
-    with c2:
-        date_to = st.date_input("To Date", value=gmax, min_value=gmin, max_value=gmax, key="date_to")
-    with c3:
-        st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
-        if st.button("Apply Date Range", type="primary"):
-            st.rerun()
-
-    st.markdown("---")
+        today = date.today()
+        date_from = today - timedelta(days=30)
+        date_to = today
+        st.session_state.date_from = date_from
+        st.session_state.date_to = date_to
 
     # WTD/MTD/YTD calculations
     today = pd.Timestamp.today().normalize()
@@ -842,7 +828,7 @@ def show_lead_status(d):
         }
     )
 
-# Navigation
+# Navigation with POPOVER Date Filter
 fdata = data
 
 NAV = [
@@ -851,22 +837,129 @@ NAV = [
 ]
 
 if HAS_OPTION_MENU:
-    selected = option_menu(
-        None, [n[0] for n in NAV], icons=[n[1] for n in NAV],
-        orientation="horizontal", default_index=0,
-        styles={
-            "container": {"padding":"0!important","background-color": BG_PAGE},
-            "icon": {"color": PRIMARY_GOLD, "font-size": "16px"},
-            "nav-link": {"font-size": "14px", "color": TEXT_MUTED, "--hover-color": "#EEF2FF"},
-            "nav-link-selected": {"background-color": BG_SURFACE, "color": TEXT_MAIN, "border-bottom": f"2px solid {PRIMARY_GOLD}"},
-        }
-    )
+    # Create container for nav and date filter in same row
+    nav_col, filter_col = st.columns([4, 0.8])
+    
+    with nav_col:
+        selected = option_menu(
+            None, [n[0] for n in NAV], icons=[n[1] for n in NAV],
+            orientation="horizontal", default_index=0,
+            styles={
+                "container": {"padding":"0!important","background-color": BG_PAGE},
+                "icon": {"color": PRIMARY_GOLD, "font-size": "16px"},
+                "nav-link": {"font-size": "14px", "color": TEXT_MUTED, "--hover-color": "#EEF2FF"},
+                "nav-link-selected": {"background-color": BG_SURFACE, "color": TEXT_MAIN, "border-bottom": f"2px solid {PRIMARY_GOLD}"},
+            }
+        )
+    
+    with filter_col:
+        st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
+        
+        # Use popover to show filter menu below the button
+        with st.popover("📅 Filter", use_container_width=True):
+            st.markdown("### Date Filter Options")
+            
+            filter_type = st.radio(
+                "Select Time Period",
+                ["Week", "Month", "Year", "Custom"],
+                horizontal=False,
+                key="date_filter_type_nav"
+            )
+            
+            today = date.today()
+            
+            if filter_type == "Week":
+                st.session_state.date_from = today - timedelta(days=7)
+                st.session_state.date_to = today
+                st.success(f"✅ Last 7 days")
+                
+            elif filter_type == "Month":
+                st.session_state.date_from = today - timedelta(days=30)
+                st.session_state.date_to = today
+                st.success(f"✅ Last 30 days")
+                
+            elif filter_type == "Year":
+                st.session_state.date_from = today - timedelta(days=365)
+                st.session_state.date_to = today
+                st.success(f"✅ Last 365 days")
+                
+            else:  # Custom
+                st.markdown("#### Custom Range")
+                custom_from = st.date_input(
+                    "From Date", 
+                    value=st.session_state.get('date_from', today - timedelta(days=30)),
+                    key="custom_date_from_nav"
+                )
+                
+                custom_to = st.date_input(
+                    "To Date", 
+                    value=st.session_state.get('date_to', today),
+                    key="custom_date_to_nav"
+                )
+                
+                if st.button("Apply Custom Range", type="primary", use_container_width=True, key="apply_custom_date_nav"):
+                    st.session_state.date_from = custom_from
+                    st.session_state.date_to = custom_to
+                    st.success(f"✅ Applied: {custom_from} to {custom_to}")
+                    st.rerun()
+    
+    st.markdown("---")
+    
     if selected == "Executive":
         show_executive_summary(fdata)
     elif selected == "Lead Status":
         show_lead_status(fdata)
+        
 else:
-    tabs = st.tabs([n[2] for n in NAV])
+    # Fallback for standard tabs
+    nav_col, filter_col = st.columns([4, 0.8])
+    
+    with nav_col:
+        tabs = st.tabs([n[2] for n in NAV])
+    
+    with filter_col:
+        st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
+        
+        with st.popover("📅 Filter", use_container_width=True):
+            st.markdown("### Date Filter Options")
+            
+            filter_type = st.radio(
+                "Select Time Period",
+                ["Week", "Month", "Year", "Custom"],
+                horizontal=False,
+                key="date_filter_type_fallback"
+            )
+            
+            today = date.today()
+            
+            if filter_type == "Week":
+                st.session_state.date_from = today - timedelta(days=7)
+                st.session_state.date_to = today
+                st.success(f"✅ Last 7 days")
+                
+            elif filter_type == "Month":
+                st.session_state.date_from = today - timedelta(days=30)
+                st.session_state.date_to = today
+                st.success(f"✅ Last 30 days")
+                
+            elif filter_type == "Year":
+                st.session_state.date_from = today - timedelta(days=365)
+                st.session_state.date_to = today
+                st.success(f"✅ Last 365 days")
+                
+            else:
+                st.markdown("#### Custom Range")
+                custom_from = st.date_input("From Date", value=st.session_state.get('date_from', today - timedelta(days=30)), key="custom_from_fb")
+                custom_to = st.date_input("To Date", value=st.session_state.get('date_to', today), key="custom_to_fb")
+                
+                if st.button("Apply Custom Range", type="primary", use_container_width=True, key="apply_fb"):
+                    st.session_state.date_from = custom_from
+                    st.session_state.date_to = custom_to
+                    st.success(f"✅ Applied: {custom_from} to {custom_to}")
+                    st.rerun()
+    
+    st.markdown("---")
+    
     with tabs[0]:
         show_executive_summary(fdata)
     with tabs[1]:
