@@ -158,10 +158,10 @@ def get_connection():
         st.error(f"❌ Database connection failed: {e}")
         return None, None
 
-# Optimized data loading with indexed queries
+# Optimized data loading - FIXED: Removed INDEX hints and NOLOCK
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_lookup_tables(_conn, _runner):
-    """Load static reference tables (cached for 1 hour) - Optimized"""
+    """Load static reference tables (cached for 1 hour)"""
     
     def q(sql):
         if _conn:
@@ -171,72 +171,69 @@ def load_lookup_tables(_conn, _runner):
     return {
         "countries": q("""
             SELECT CountryId, CountryName_E 
-            FROM dbo.Country WITH (NOLOCK)
+            FROM dbo.Country 
             WHERE IsActive = 1
         """),
         "lead_statuses": q("""
             SELECT LeadStatusId, StatusName_E 
-            FROM dbo.LeadStatus WITH (NOLOCK)
+            FROM dbo.LeadStatus 
             WHERE IsActive = 1
         """),
         "lead_stages": q("""
             SELECT LeadStageId, StageName_E, SortOrder 
-            FROM dbo.LeadStage WITH (NOLOCK)
+            FROM dbo.LeadStage 
             WHERE IsActive = 1
         """),
         "meeting_status": q("""
             SELECT MeetingStatusId, StatusName_E 
-            FROM dbo.MeetingStatus WITH (NOLOCK)
+            FROM dbo.MeetingStatus 
             WHERE IsActive = 1
         """),
         "call_statuses": q("""
             SELECT CallStatusId, StatusName_E 
-            FROM dbo.CallStatus WITH (NOLOCK)
+            FROM dbo.CallStatus 
             WHERE IsActive = 1
         """),
     }
 
 @st.cache_data(ttl=60, show_spinner=False)
 def load_transactional_data(_conn, _runner):
-    """Load frequently changing data (cached for 1 minute) - Optimized with indexes"""
+    """Load frequently changing data (cached for 1 minute) - FIXED"""
     
     def q(sql):
         if _conn:
             return _conn.query(sql, ttl=60)
         return _runner(sql)
     
-    # Optimized: Only load necessary columns with index hints
+    # Simplified queries without SQL Server-specific hints
     leads = q("""
         SELECT 
             LeadId, LeadCode, LeadStageId, LeadStatusId, LeadScoringId,
             AssignedAgentId, CountryId, CityRegionId, CreatedOn, ModifiedOn, IsActive
-        FROM dbo.Lead WITH (NOLOCK, INDEX(IX_Lead_CreatedOn))
+        FROM dbo.Lead 
         WHERE IsActive = 1
     """)
     
-    # Optimized: Filter only relevant meetings
     meetings = q("""
         SELECT 
             AssignmentId, LeadId, StartDateTime, EndDateTime, 
             MeetingStatusId, AgentId
-        FROM dbo.AgentMeetingAssignment WITH (NOLOCK, INDEX(IX_AgentMeetingAssignment_LeadId))
+        FROM dbo.AgentMeetingAssignment 
         WHERE MeetingStatusId IN (1, 6)
     """)
     
-    # Optimized: Only recent calls (last 12 months)
     calls = q("""
         SELECT 
             LeadCallId, LeadId, CallDateTime, DurationSeconds,
             CallStatusId, SentimentId, AssignedAgentId, CallDirection
-        FROM dbo.LeadCallRecord WITH (NOLOCK, INDEX(IX_LeadCallRecord_CallDateTime))
+        FROM dbo.LeadCallRecord 
         WHERE CallDateTime >= DATEADD(MONTH, -12, GETDATE())
     """)
     
-    # Optimized: Only recent audit records (last 12 months)
     stage_audit = q("""
         SELECT 
             AuditId, LeadId, StageId, CreatedOn
-        FROM dbo.LeadStageAudit WITH (NOLOCK, INDEX(IX_LeadStageAudit_CreatedOn))
+        FROM dbo.LeadStageAudit 
         WHERE CreatedOn >= DATEADD(MONTH, -12, GETDATE())
     """)
     
@@ -316,7 +313,7 @@ for key in data:
 
 grain = "Month"
 
-# Funnel and markets - Optimized
+# Funnel and markets
 def render_funnel_and_markets(d):
     leads      = d.get("leads")
     stages     = d.get("lead_stages")
@@ -338,7 +335,6 @@ def render_funnel_and_markets(d):
             how="left"
         )
         
-        # Optimized groupby
         funnel_df = (
             funnel_query.groupby(["SortOrder", "StageName_E"], as_index=False)["LeadId"]
             .nunique()
@@ -346,7 +342,6 @@ def render_funnel_and_markets(d):
             .sort_values("SortOrder", ascending=True)
         )
         
-        # Remove Lost from main funnel
         funnel_df = funnel_df[funnel_df["StageName_E"].str.lower() != "lost"]
         funnel_df["Stage"] = funnel_df["StageName_E"]
         
@@ -386,9 +381,8 @@ def render_funnel_and_markets(d):
     
     st.plotly_chart(fig, use_container_width=True)
 
-    # Top markets - Optimized
+    # Top markets
     if countries is not None and "CountryId" in leads.columns and "CountryName_E" in countries.columns:
-        # Vectorized operations instead of loops
         bycountry = (
             leads.groupby("CountryId", dropna=True, as_index=False).size()
             .rename(columns={"size": "Leads"})
@@ -408,7 +402,7 @@ def render_funnel_and_markets(d):
     else:
         st.info("Country data unavailable.")
 
-# Executive summary - Optimized with collapsible date filter
+# Executive summary with collapsible date filter
 def show_executive_summary(d):
     leads_all = d.get("leads")
     lead_statuses = d.get("lead_statuses")
@@ -417,7 +411,7 @@ def show_executive_summary(d):
         st.info("No data available.")
         return
 
-    # Resolve Won status id (cached in session state for performance)
+    # Resolve Won status id
     if 'won_status_id' not in st.session_state:
         won_status_id = 9
         if lead_statuses is not None and "StatusName_E" in lead_statuses.columns:
@@ -644,7 +638,6 @@ def show_executive_summary(d):
     start_day = pd.Timestamp(date_from)
     end_day = pd.Timestamp(date_to)
     
-    # Optimized: Vectorized date filtering
     if "CreatedOn" in leads_all.columns:
         created = pd.to_datetime(leads_all["CreatedOn"], errors="coerce")
         mask = (created.dt.date >= start_day.date()) & (created.dt.date <= end_day.date())
@@ -784,7 +777,7 @@ def show_executive_summary(d):
     d2["leads"] = filtered_leads
     render_funnel_and_markets(d2)
 
-# Lead Status page - Optimized
+# Lead Status page
 def show_lead_status(d):
     leads  = d.get("leads")
     stats  = d.get("lead_statuses")
