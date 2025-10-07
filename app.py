@@ -1045,7 +1045,7 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
                 st.warning("⚠️ No leads have been assigned to agents yet.")
                 st.info(f"📊 Total leads available for assignment: **{len(L):,}**")
 
-        # ===== PROFESSIONAL STATUS DISTRIBUTION =====
+        # ===== PROFESSIONAL STATUS DISTRIBUTION WITH MATCHING CARD STYLES =====
         st.markdown("---")
         
         status_counts = L["Status"].value_counts().reset_index()
@@ -1085,104 +1085,72 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
             st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
         
         with col_stats:
-            # CSS for professional cards
+            # CSS for matching white card style
             st.markdown("""
             <style>
-            .metrics-card {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                padding: 24px;
-                border-radius: 12px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                color: white;
-                margin-bottom: 20px;
-            }
-            .metrics-card h3 {
-                color: white;
-                font-size: 18px;
-                font-weight: 600;
-                margin-bottom: 16px;
-                border-bottom: 2px solid rgba(255,255,255,0.3);
-                padding-bottom: 8px;
-            }
-            .metric-item {
-                background: rgba(255,255,255,0.15);
-                padding: 12px;
-                border-radius: 8px;
-                margin-bottom: 12px;
-                backdrop-filter: blur(10px);
-            }
-            .metric-label {
-                font-size: 13px;
-                opacity: 0.9;
-                margin-bottom: 4px;
-            }
-            .metric-value {
-                font-size: 28px;
-                font-weight: 700;
-                line-height: 1;
-            }
-            .top-status-card {
+            .info-card {
                 background: white;
                 padding: 20px;
                 border-radius: 12px;
                 border: 2px solid #E5E7EB;
                 box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                margin-bottom: 16px;
             }
-            .top-status-card h4 {
+            .info-card h4 {
                 color: #111827;
                 font-size: 16px;
                 font-weight: 600;
                 margin-bottom: 12px;
-                border-bottom: 2px solid #DAA520;
+                border-bottom: 2px solid #1E90FF;
                 padding-bottom: 6px;
             }
-            .status-item {
+            .info-item {
                 padding: 8px 0;
                 border-bottom: 1px solid #F3F4F6;
                 font-size: 14px;
                 color: #374151;
             }
-            .status-item:last-child {
+            .info-item:last-child {
                 border-bottom: none;
+            }
+            .info-item strong {
+                color: #111827;
+                font-weight: 600;
             }
             </style>
             """, unsafe_allow_html=True)
             
-            # Key Metrics Card
-            st.markdown(f"""
-            <div class="metrics-card">
-                <h3>📊 Key Metrics</h3>
-                
-                <div class="metric-item">
-                    <div class="metric-label">📊 Total Leads</div>
-                    <div class="metric-value">{total_leads:,}</div>
-                </div>
-                
-                <div class="metric-item">
-                    <div class="metric-label">🎯 Won Deals</div>
-                    <div class="metric-value">{won_count:,}</div>
-                </div>
-                
-                <div class="metric-item">
-                    <div class="metric-label">📈 Win Rate</div>
-                    <div class="metric-value">{conversion_rate:.1f}%</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            # Key Metrics Card - WHITE CARD STYLE
+            metrics_items = f"""
+            <div class="info-item"><strong>📊 Total Leads:</strong> {total_leads:,}</div>
+            <div class="info-item"><strong>🎯 Won Deals:</strong> {won_count:,}</div>
+            <div class="info-item"><strong>📈 Win Rate:</strong> {conversion_rate:.1f}%</div>
+            """
             
-            # Top 3 Statuses Card
+            key_metrics_html = f"""
+            <div class="info-card">
+                <h4>📊 Key Metrics</h4>
+                {metrics_items}
+            </div>
+            """
+            
+            st.markdown(key_metrics_html, unsafe_allow_html=True)
+            
+            # Top 3 Statuses Card - WHITE CARD STYLE
             top_3 = status_counts.head(3)
-            status_html = ""
+            status_items = ""
             for idx, row in top_3.iterrows():
                 pct = (row['Count'] / total_leads * 100)
-                status_html += f'<div class="status-item"><strong>{row["Status"]}</strong>: {row["Count"]:,} ({pct:.1f}%)</div>'
+                status_items += f'<div class="info-item"><strong>{row["Status"]}:</strong> {row["Count"]:,} ({pct:.1f}%)</div>'
             
-            st.markdown(f"""
-            <div class="top-status-card">
+            top_status_html = f"""
+            <div class="info-card">
                 <h4>🏆 Top 3 Statuses</h4>
-                {status_html}
+                {status_items}
             </div>
-            """, unsafe_allow_html=True)
+            """
+            
+            st.markdown(top_status_html, unsafe_allow_html=True)
 
         # ===== STATUS COMPARISON MATRIX =====
         st.markdown("---")
