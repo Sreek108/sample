@@ -883,11 +883,13 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
 
 # Lead Status Analysis
 def show_lead_status(d: Dict[str, pd.DataFrame]):
-    """Display enhanced lead status analysis"""
+    """Display enhanced lead status analysis with professional visualizations"""
     leads = d.get("leads", pd.DataFrame())
     stats = d.get("lead_statuses", pd.DataFrame())
     calls = d.get("calls", pd.DataFrame())
     meets = d.get("agent_meeting_assignment", pd.DataFrame())
+    stages = d.get("lead_stages", pd.DataFrame())
+    audit = d.get("lead_stage_audit", pd.DataFrame())
 
     if not validate_dataframe(leads, ["LeadId", "LeadStatusId"], "Leads"):
         return
@@ -912,18 +914,19 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
             if not won_status.empty:
                 won_status_id = int(won_status.iloc[0]["LeadStatusId"])
 
+        # Calculate key metrics
+        total_leads = len(L)
+        won_count = int((L["LeadStatusId"] == won_status_id).sum())
+        conversion_rate = (won_count / total_leads * 100) if total_leads > 0 else 0
+
         # ===== FEATURE 1: STATUS KPIs =====
         st.subheader("📊 Lead Status Overview")
         
-        # Define categories based on YOUR actual status names
         hot_statuses = ['Meeting Scheduled', 'Negotiating Terms', 'Meeting Confirmed', 'Awaiting Budget']
         cold_statuses = ['Follow up Needed', 'Interested', 'Attempted Contact', 'Callback Scheduled', 'In Discussion']
         
         hot_leads = len(L[L["Status"].isin(hot_statuses)])
         cold_leads = len(L[L["Status"].isin(cold_statuses)])
-        total_leads = len(L)
-        won_count = int((L["LeadStatusId"] == won_status_id).sum())
-        conversion_rate = (won_count / total_leads * 100) if total_leads > 0 else 0
         avg_days_to_close = L[L["LeadStatusId"] == won_status_id]["age_days"].mean() if won_count > 0 else 0
         
         col1, col2, col3, col4 = st.columns(4)
@@ -969,7 +972,6 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
             L_trend["Month"] = pd.to_datetime(L_trend["CreatedOn"]).dt.to_period('M').astype(str)
             trend_data = L_trend.groupby(['Month', 'Status']).size().reset_index(name='Count')
             
-            # Get top 6 statuses
             top_statuses = L["Status"].value_counts().head(6).index.tolist()
             trend_filtered = trend_data[trend_data["Status"].isin(top_statuses)]
             
@@ -998,13 +1000,10 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
         st.markdown("---")
         st.subheader("👥 Agent Performance by Status")
         
-        # Check if AssignedAgentId has valid data
         if "AssignedAgentId" in L.columns:
-            # Remove NULL and 0 values
             L_with_agents = L[(L["AssignedAgentId"].notna()) & (L["AssignedAgentId"] != 0)].copy()
             
             if len(L_with_agents) > 0:
-                # Calculate agent stats
                 agent_stats = L_with_agents.groupby("AssignedAgentId").agg(
                     Total_Leads=("LeadId", "count"),
                     Won_Leads=("LeadStatusId", lambda x: (x == won_status_id).sum()),
@@ -1015,12 +1014,10 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
                 agent_stats["Avg_Days"] = agent_stats["Avg_Days"].round(1)
                 agent_stats = agent_stats.sort_values("Conversion_Rate", ascending=False).head(10)
                 
-                # Performance indicator
                 agent_stats["Performance"] = agent_stats["Conversion_Rate"].apply(
                     lambda x: '🟢 High' if x >= 5.0 else ('🟡 Medium' if x >= 2.0 else '🔴 Low')
                 )
                 
-                # Rename for display
                 agent_stats = agent_stats.rename(columns={"AssignedAgentId": "Agent_ID"})
                 
                 st.dataframe(
@@ -1031,18 +1028,12 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
                         "Agent_ID": st.column_config.NumberColumn("Agent ID", format="%d"),
                         "Total_Leads": st.column_config.NumberColumn("Total Leads", format="%d"),
                         "Won_Leads": st.column_config.NumberColumn("Won", format="%d"),
-                        "Conversion_Rate": st.column_config.ProgressColumn(
-                            "Conversion Rate", 
-                            format="%.1f%%",
-                            min_value=0,
-                            max_value=20
-                        ),
+                        "Conversion_Rate": st.column_config.ProgressColumn("Conversion Rate", format="%.1f%%", min_value=0, max_value=20),
                         "Avg_Days": st.column_config.NumberColumn("Avg Days", format="%.1f"),
                         "Performance": st.column_config.TextColumn("Performance")
                     }
                 )
                 
-                # Show summary stats
                 total_with_agents = len(L_with_agents)
                 total_without_agents = len(L) - total_with_agents
                 col_a, col_b = st.columns(2)
@@ -1051,37 +1042,29 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
                 with col_b:
                     st.metric("❓ Unassigned Leads", f"{total_without_agents:,}")
             else:
-                st.warning("⚠️ No leads have been assigned to agents yet. Please assign agents in your CRM system.")
+                st.warning("⚠️ No leads have been assigned to agents yet.")
                 st.info(f"📊 Total leads available for assignment: **{len(L):,}**")
-        else:
-            st.error("❌ AssignedAgentId column not found in database")
 
-        # ===== EXISTING FEATURES =====
+        # ===== PROFESSIONAL STATUS DISTRIBUTION =====
         st.markdown("---")
         
         status_counts = L["Status"].value_counts().reset_index()
         status_counts.columns = ["Status", "Count"]
         
-        # Create professional layout
         st.subheader("📊 Lead Status Overview")
         
         col_chart, col_stats = st.columns([2, 1])
         
         with col_chart:
-            # Professional bar chart instead of pie
-            fig_bar = go.Figure()
-            
-            # Sort by count descending
+            # Professional horizontal bar chart
             status_counts_sorted = status_counts.sort_values("Count", ascending=True)
             
+            fig_bar = go.Figure()
             fig_bar.add_trace(go.Bar(
                 y=status_counts_sorted["Status"],
                 x=status_counts_sorted["Count"],
                 orientation='h',
-                marker=dict(
-                    color=ACCENT_BLUE,
-                    line=dict(color='white', width=1)
-                ),
+                marker=dict(color=ACCENT_BLUE, line=dict(color='white', width=1)),
                 text=status_counts_sorted["Count"],
                 textposition='outside',
                 textfont=dict(size=11, color=TEXT_MAIN),
@@ -1089,156 +1072,276 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
             ))
             
             fig_bar.update_layout(
-                title=dict(
-                    text="Lead Distribution by Status",
-                    font=dict(size=16, color=TEXT_MAIN, family="Inter")
-                ),
+                title=dict(text="Lead Distribution by Status", font=dict(size=16, color=TEXT_MAIN)),
                 height=400,
                 plot_bgcolor='rgba(0,0,0,0)',
                 paper_bgcolor='rgba(0,0,0,0)',
-                font=dict(color=TEXT_MAIN, family="Inter"),
-                xaxis=dict(
-                    title="Number of Leads",
-                    showgrid=True,
-                    gridcolor='rgba(0,0,0,0.05)',
-                    tickfont=dict(size=10)
-                ),
-                yaxis=dict(
-                    title="",
-                    tickfont=dict(size=11)
-                ),
+                font=dict(color=TEXT_MAIN),
+                xaxis=dict(title="Number of Leads", showgrid=True, gridcolor='rgba(0,0,0,0.05)'),
+                yaxis=dict(title=""),
                 margin=dict(l=10, r=50, t=50, b=40)
             )
             
             st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
         
         with col_stats:
-            st.markdown("### Key Metrics")
-            st.metric("📊 Total Leads", f"{total_leads:,}")
-            st.metric("🎯 Won Deals", f"{won_count:,}")
-            st.metric("📈 Win Rate", f"{conversion_rate:.1f}%")
+            # CSS for professional cards
+            st.markdown("""
+            <style>
+            .metrics-card {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                padding: 24px;
+                border-radius: 12px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                color: white;
+                margin-bottom: 20px;
+            }
+            .metrics-card h3 {
+                color: white;
+                font-size: 18px;
+                font-weight: 600;
+                margin-bottom: 16px;
+                border-bottom: 2px solid rgba(255,255,255,0.3);
+                padding-bottom: 8px;
+            }
+            .metric-item {
+                background: rgba(255,255,255,0.15);
+                padding: 12px;
+                border-radius: 8px;
+                margin-bottom: 12px;
+                backdrop-filter: blur(10px);
+            }
+            .metric-label {
+                font-size: 13px;
+                opacity: 0.9;
+                margin-bottom: 4px;
+            }
+            .metric-value {
+                font-size: 28px;
+                font-weight: 700;
+                line-height: 1;
+            }
+            .top-status-card {
+                background: white;
+                padding: 20px;
+                border-radius: 12px;
+                border: 2px solid #E5E7EB;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            }
+            .top-status-card h4 {
+                color: #111827;
+                font-size: 16px;
+                font-weight: 600;
+                margin-bottom: 12px;
+                border-bottom: 2px solid #DAA520;
+                padding-bottom: 6px;
+            }
+            .status-item {
+                padding: 8px 0;
+                border-bottom: 1px solid #F3F4F6;
+                font-size: 14px;
+                color: #374151;
+            }
+            .status-item:last-child {
+                border-bottom: none;
+            }
+            </style>
+            """, unsafe_allow_html=True)
             
-            # Top 3 statuses
-            st.markdown("#### Top 3 Statuses")
+            # Key Metrics Card
+            st.markdown(f"""
+            <div class="metrics-card">
+                <h3>📊 Key Metrics</h3>
+                
+                <div class="metric-item">
+                    <div class="metric-label">📊 Total Leads</div>
+                    <div class="metric-value">{total_leads:,}</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">🎯 Won Deals</div>
+                    <div class="metric-value">{won_count:,}</div>
+                </div>
+                
+                <div class="metric-item">
+                    <div class="metric-label">📈 Win Rate</div>
+                    <div class="metric-value">{conversion_rate:.1f}%</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Top 3 Statuses Card
             top_3 = status_counts.head(3)
+            status_html = ""
             for idx, row in top_3.iterrows():
                 pct = (row['Count'] / total_leads * 100)
-                st.markdown(f"**{row['Status']}**: {row['Count']:,} ({pct:.1f}%)")
+                status_html += f'<div class="status-item"><strong>{row["Status"]}</strong>: {row["Count"]:,} ({pct:.1f}%)</div>'
+            
+            st.markdown(f"""
+            <div class="top-status-card">
+                <h4>🏆 Top 3 Statuses</h4>
+                {status_html}
+            </div>
+            """, unsafe_allow_html=True)
 
-        # ===== PROFESSIONAL: DETAILED STATUS ANALYSIS =====
+        # ===== STATUS COMPARISON MATRIX =====
         st.markdown("---")
-        st.subheader("📋 Detailed Status Analysis")
+        st.subheader("📊 Status Comparison Matrix")
         
-        # Calculate comprehensive metrics
-        meeting_rates = pd.DataFrame({"Status": [], "meeting_rate": []})
-        if not meets.empty and "LeadId" in meets.columns:
-            valid_meetings = meets[meets.get("MeetingStatusId", pd.Series()).isin([1, 6])]
-            if not valid_meetings.empty:
-                meeting_data = valid_meetings.merge(L[["LeadId", "Status"]], on="LeadId", how="inner")
-                meeting_rates = meeting_data.groupby("Status")["LeadId"].nunique().reset_index(name="meetings")
-
-        connection_rates = pd.DataFrame({"Status": [], "connect_rate": []})
-        if not calls.empty and "LeadId" in calls.columns:
-            call_data = calls.merge(L[["LeadId", "Status"]], on="LeadId", how="inner")
-            if not call_data.empty:
-                conn_stats = call_data.groupby("Status").agg(
-                    total_calls=("LeadCallId", "count"),
-                    connected_calls=("CallStatusId", lambda x: (x == 1).sum())
-                ).reset_index()
-                conn_stats["connect_rate"] = (conn_stats["connected_calls"] / conn_stats["total_calls"]).fillna(0) * 100
-                connection_rates = conn_stats[["Status", "connect_rate"]]
-
-        summary_stats = L.groupby("Status").agg(
-            Leads=("LeadId", "count"),
-            Avg_Age_Days=("age_days", "mean")
+        comparison = L.groupby('Status').agg(
+            Total_Leads=('LeadId', 'count'),
+            Avg_Age=('age_days', 'mean'),
+            Won_Count=('LeadStatusId', lambda x: (x == won_status_id).sum())
         ).reset_index()
-
-        total = summary_stats["Leads"].sum()
-        summary_stats["Market_Share"] = (summary_stats["Leads"] / total * 100).round(1) if total > 0 else 0
-
-        if not meeting_rates.empty:
-            summary_stats = summary_stats.merge(
-                meeting_rates.rename(columns={"meetings": "Meeting_Count"}), 
-                on="Status", 
-                how="left"
-            )
-            summary_stats["Meeting_Rate"] = (summary_stats["Meeting_Count"].fillna(0) / summary_stats["Leads"] * 100).round(1)
+        
+        comparison['Win_Rate'] = (comparison['Won_Count'] / comparison['Total_Leads'] * 100).round(1)
+        comparison['Avg_Age'] = comparison['Avg_Age'].round(0)
+        
+        if not meets.empty:
+            meeting_stats = meets.merge(L[['LeadId', 'Status']], on='LeadId', how='inner')
+            meeting_counts = meeting_stats.groupby('Status')['LeadId'].nunique().reset_index(name='Meetings')
+            comparison = comparison.merge(meeting_counts, on='Status', how='left')
+            comparison['Meetings'] = comparison['Meetings'].fillna(0).astype(int)
         else:
-            summary_stats["Meeting_Rate"] = 0.0
-
-        if not connection_rates.empty:
-            summary_stats = summary_stats.merge(connection_rates, on="Status", how="left")
-            summary_stats["Call_Connect_Rate"] = summary_stats["connect_rate"].fillna(0).round(1)
-        else:
-            summary_stats["Call_Connect_Rate"] = 0.0
-
-        summary_stats["Avg_Age_Days"] = summary_stats["Avg_Age_Days"].fillna(0).round(0)
-        summary_stats = summary_stats.sort_values("Leads", ascending=False)
-
-        # Professional styled dataframe
+            comparison['Meetings'] = 0
+        
+        comparison = comparison.sort_values('Total_Leads', ascending=False)
+        
+        comparison['Health_Score'] = (
+            (comparison['Win_Rate'] * 0.4) + 
+            ((100 - comparison['Avg_Age'].clip(0, 100)) * 0.3) +
+            ((comparison['Meetings'] / comparison['Total_Leads'].clip(1) * 100).clip(0, 100) * 0.3)
+        ).round(0)
+        
         st.dataframe(
-            summary_stats[["Status", "Leads", "Market_Share", "Avg_Age_Days", "Meeting_Rate", "Call_Connect_Rate"]],
+            comparison[['Status', 'Total_Leads', 'Win_Rate', 'Avg_Age', 'Meetings', 'Health_Score']],
             use_container_width=True,
             hide_index=True,
-            height=400,
+            height=450,
             column_config={
-                "Status": st.column_config.TextColumn(
-                    "Status",
-                    width="large",
-                    help="Current lead status"
-                ),
-                "Leads": st.column_config.NumberColumn(
-                    "Total Leads",
-                    format="%,d",
-                    help="Number of leads in this status"
-                ),
-                "Market_Share": st.column_config.ProgressColumn(
-                    "Market Share",
-                    format="%.1f%%",
-                    min_value=0,
-                    max_value=100,
-                    help="Percentage of total leads"
-                ),
-                "Avg_Age_Days": st.column_config.NumberColumn(
-                    "Avg Age (Days)",
-                    format="%.0f",
-                    help="Average time leads spend in this status"
-                ),
-                "Meeting_Rate": st.column_config.ProgressColumn(
-                    "Meeting Rate",
-                    format="%.1f%%",
-                    min_value=0,
-                    max_value=100,
-                    help="Percentage of leads with meetings"
-                ),
-                "Call_Connect_Rate": st.column_config.ProgressColumn(
-                    "Call Connect Rate",
-                    format="%.1f%%",
-                    min_value=0,
-                    max_value=100,
-                    help="Percentage of successful call connections"
-                )
+                "Status": st.column_config.TextColumn("Status", width="large"),
+                "Total_Leads": st.column_config.NumberColumn("Leads", format="%,d"),
+                "Win_Rate": st.column_config.ProgressColumn("Win Rate", format="%.1f%%", min_value=0, max_value=20),
+                "Avg_Age": st.column_config.NumberColumn("Avg Age (Days)", format="%.0f"),
+                "Meetings": st.column_config.NumberColumn("Meetings", format="%d"),
+                "Health_Score": st.column_config.ProgressColumn("Health Score", format="%.0f", min_value=0, max_value=100)
             }
         )
-        
-        # Summary insights
+
+        # ===== STATUS VELOCITY ANALYSIS =====
         st.markdown("---")
-        col_insight1, col_insight2, col_insight3 = st.columns(3)
+        st.subheader("⚡ Status Velocity - Speed Analysis")
         
-        with col_insight1:
-            most_common = status_counts.iloc[0]
-            st.info(f"📌 **Most Common Status**\n\n{most_common['Status']} ({most_common['Count']:,} leads)")
+        col_vel1, col_vel2 = st.columns(2)
         
-        with col_insight2:
-            oldest_status = summary_stats.nlargest(1, 'Avg_Age_Days').iloc[0]
-            st.warning(f"⏰ **Longest Wait Time**\n\n{oldest_status['Status']} ({oldest_status['Avg_Age_Days']:.0f} days avg)")
+        with col_vel1:
+            velocity_data = L.groupby('Status')['age_days'].agg(['mean', 'median', 'count']).reset_index()
+            velocity_data.columns = ['Status', 'Avg_Days', 'Median_Days', 'Count']
+            velocity_data = velocity_data[velocity_data['Count'] >= 10]
+            velocity_data = velocity_data.sort_values('Avg_Days', ascending=False).head(8)
+            
+            if len(velocity_data) > 0:
+                fig_velocity = go.Figure()
+                
+                fig_velocity.add_trace(go.Bar(
+                    x=velocity_data['Avg_Days'],
+                    y=velocity_data['Status'],
+                    orientation='h',
+                    marker=dict(
+                        color=velocity_data['Avg_Days'],
+                        colorscale='RdYlGn_r',
+                        showscale=True,
+                        colorbar=dict(title="Days")
+                    ),
+                    text=velocity_data['Avg_Days'].round(0),
+                    textposition='outside',
+                    hovertemplate='<b>%{y}</b><br>Days: %{x:.0f}<extra></extra>'
+                ))
+                
+                fig_velocity.update_layout(
+                    title="Average Time in Each Status (Days)",
+                    height=400,
+                    xaxis_title="Days",
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color=TEXT_MAIN)
+                )
+                
+                st.plotly_chart(fig_velocity, use_container_width=True, config={'displayModeBar': False})
         
-        with col_insight3:
-            if "Meeting_Rate" in summary_stats.columns and summary_stats["Meeting_Rate"].max() > 0:
-                best_meeting = summary_stats.nlargest(1, 'Meeting_Rate').iloc[0]
-                st.success(f"🎯 **Best Meeting Rate**\n\n{best_meeting['Status']} ({best_meeting['Meeting_Rate']:.1f}%)")
-            else:
-                st.success(f"📊 **Total Pipeline**\n\n{total_leads:,} active leads")
+        with col_vel2:
+            if len(velocity_data) > 0:
+                fast_statuses = velocity_data.nsmallest(3, 'Avg_Days')
+                slow_statuses = velocity_data.nlargest(3, 'Avg_Days')
+                
+                st.markdown("#### ⚡ Fastest Moving")
+                for _, row in fast_statuses.iterrows():
+                    st.success(f"**{row['Status']}**: {row['Avg_Days']:.0f} days")
+                
+                st.markdown("#### 🐌 Slowest Moving")
+                for _, row in slow_statuses.iterrows():
+                    st.error(f"**{row['Status']}**: {row['Avg_Days']:.0f} days")
+
+        # ===== STATUS FLOW SANKEY =====
+        st.markdown("---")
+        st.subheader("🔄 Lead Status Flow Analysis")
+        
+        if not audit.empty and "StageId" in audit.columns and not stages.empty:
+            audit_sorted = audit.sort_values(['LeadId', 'CreatedOn'])
+            audit_sorted['NextStageId'] = audit_sorted.groupby('LeadId')['StageId'].shift(-1)
+            
+            transitions = audit_sorted[audit_sorted['NextStageId'].notna()].copy()
+            
+            if len(transitions) > 10:
+                stage_map = dict(zip(stages['LeadStageId'], stages['StageName_E']))
+                transitions['From_Stage'] = transitions['StageId'].map(stage_map)
+                transitions['To_Stage'] = transitions['NextStageId'].map(stage_map)
+                
+                flow_data = transitions.groupby(['From_Stage', 'To_Stage']).size().reset_index(name='Count')
+                flow_data = flow_data[flow_data['Count'] >= 5]
+                
+                if len(flow_data) > 0:
+                    all_stages = list(set(flow_data['From_Stage'].tolist() + flow_data['To_Stage'].tolist()))
+                    stage_to_idx = {stage: idx for idx, stage in enumerate(all_stages)}
+                    
+                    colors = []
+                    for stage in all_stages:
+                        if 'Won' in str(stage):
+                            colors.append(ACCENT_GREEN)
+                        elif 'Meeting' in str(stage) or 'Negotiat' in str(stage):
+                            colors.append(ACCENT_BLUE)
+                        elif 'Lost' in str(stage):
+                            colors.append(ACCENT_RED)
+                        else:
+                            colors.append(PRIMARY_GOLD)
+                    
+                    fig_sankey = go.Figure(go.Sankey(
+                        node=dict(
+                            pad=15,
+                            thickness=20,
+                            line=dict(color="white", width=2),
+                            label=all_stages,
+                            color=colors
+                        ),
+                        link=dict(
+                            source=[stage_to_idx[s] for s in flow_data['From_Stage']],
+                            target=[stage_to_idx[s] for s in flow_data['To_Stage']],
+                            value=flow_data['Count'].tolist(),
+                            color='rgba(30, 144, 255, 0.2)'
+                        )
+                    ))
+                    
+                    fig_sankey.update_layout(
+                        title="How Leads Move Through Statuses",
+                        height=500,
+                        font=dict(size=12, color=TEXT_MAIN)
+                    )
+                    
+                    st.plotly_chart(fig_sankey, use_container_width=True, config={'displayModeBar': False})
+                else:
+                    st.info("📊 Not enough status transition data for flow visualization")
+        else:
+            st.info("📊 Status audit data not available for flow analysis")
 
     except Exception as e:
         logger.error(f"Lead status analysis error: {e}")
