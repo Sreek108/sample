@@ -492,6 +492,7 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
                 how="inner"
             )
             
+            # Efficient groupby with proper sorting
             funnel_df = (
                 funnel_query.groupby(["SortOrder", "StageName_E"], as_index=False)["LeadId"]
                 .nunique()
@@ -499,9 +500,14 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
                 .sort_values("SortOrder", ascending=True)
             )
             
+            # Clean stage names
             stage_rename = {
-                "New": "New Leads", "Qualified": "Qualified", "Followup Process": "Follow-up",
-                "Meeting Scheduled": "Meetings", "Negotiation": "Negotiation", "Won": "Won"
+                "New": "New Leads", 
+                "Qualified": "Qualified", 
+                "Followup Process": "Follow-up",
+                "Meeting Scheduled": "Meetings", 
+                "Negotiation": "Negotiation", 
+                "Won": "Won"
             }
             
             funnel_df["Stage"] = funnel_df["StageName_E"].map(stage_rename).fillna(funnel_df["StageName_E"])
@@ -536,18 +542,20 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
             font=dict(color=TEXT_MAIN, family="Inter"),
             title=dict(
                 text=f"Sales Funnel - {total_leads:,} Total Leads",
-                x=0.5, xanchor='center',
+                x=0.5, 
+                xanchor='center',
                 font=dict(size=20, color=TEXT_MAIN, family="Inter", weight="bold")
             )
         )
         
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-        # Top markets analysis
+        # Top markets analysis - FIXED FORMATTING ERROR
         if not countries.empty and "CountryId" in leads.columns:
             try:
                 market_analysis = (
-                    leads.groupby("CountryId", dropna=True, as_index=False).size()
+                    leads.groupby("CountryId", dropna=True, as_index=False)
+                    .size()
                     .rename(columns={"size": "Leads"})
                     .merge(
                         countries[["CountryId", "CountryName_E"]].rename(columns={"CountryName_E": "Country"}), 
@@ -562,18 +570,32 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
                     top_markets = market_analysis.nlargest(5, "Leads")
                     
                     st.subheader("🌍 Top Markets")
+                    
+                    # FIXED: Corrected column configuration - removed problematic format
                     st.dataframe(
                         top_markets[["Country", "Leads", "Share"]],
                         use_container_width=True,
                         hide_index=True,
                         column_config={
-                            "Country": st.column_config.TextColumn("Country", width="medium"),
-                            "Leads": st.column_config.NumberColumn("Leads", format="%,d"),
-                            "Share": st.column_config.ProgressColumn("Market Share", format="%.1f%%", min_value=0, max_value=100)
+                            "Country": st.column_config.TextColumn(
+                                "Country", 
+                                width="medium"
+                            ),
+                            "Leads": st.column_config.NumberColumn(
+                                "Leads"
+                                # FIXED: Removed format parameter that was causing error
+                            ),
+                            "Share": st.column_config.ProgressColumn(
+                                "Market Share", 
+                                format="%.1f%%",  # This format works correctly
+                                min_value=0, 
+                                max_value=100
+                            )
                         }
                     )
                 else:
                     st.info("📍 No market data available")
+                    
             except Exception as e:
                 logger.error(f"Market analysis error: {e}")
                 st.info("📍 Market data temporarily unavailable")
