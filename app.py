@@ -513,7 +513,6 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
             paper_bgcolor="rgba(0,0,0,0)",
             font=dict(color=TEXT_MAIN),
             title=dict(
-                text=f"Sales Funnel - {total_leads:,} Total Leads",
                 x=0.5, 
                 xanchor='center',
                 font=dict(size=20, color=TEXT_MAIN)
@@ -874,7 +873,7 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
         st.warning("⚠️ No leads found in the selected date range")
 
     st.markdown("---")
-    st.subheader("🎯 Lead Conversion Analysis")
+    st.subheader("🎯 Lead Conversion Snapshot")
     render_funnel_and_markets({**d, "leads": filtered_leads if not filtered_leads.empty else leads_all})
 
 # Lead Status Analysis
