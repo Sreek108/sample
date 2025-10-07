@@ -916,8 +916,10 @@ if HAS_OPTION_MENU:
             st.markdown("### 📅 Date Filter")
             
             filter_type = st.radio(
-                "Time Period", ["Week", "Month", "Year", "Custom"],
-                horizontal=False, key="date_filter_type_nav"
+                "Time Period", 
+                ["Week", "Month", "Year", "Custom"],
+                horizontal=False, 
+                key="date_filter_type_nav"
             )
             
             today = date.today()
@@ -926,31 +928,57 @@ if HAS_OPTION_MENU:
                 st.session_state.date_from = today - timedelta(days=7)
                 st.session_state.date_to = today
                 st.success("✅ Last 7 days")
+                st.info(f"From: {st.session_state.date_from.strftime('%Y-%m-%d')}")
+                st.info(f"To: {st.session_state.date_to.strftime('%Y-%m-%d')}")
+                
             elif filter_type == "Month":
                 st.session_state.date_from = today - timedelta(days=30)
                 st.session_state.date_to = today
                 st.success("✅ Last 30 days")
+                st.info(f"From: {st.session_state.date_from.strftime('%Y-%m-%d')}")
+                st.info(f"To: {st.session_state.date_to.strftime('%Y-%m-%d')}")
+                
             elif filter_type == "Year":
                 st.session_state.date_from = today - timedelta(days=365)
                 st.session_state.date_to = today
                 st.success("✅ Last 365 days")
-            else:
-                st.markdown("#### Custom Range")
+                st.info(f"From: {st.session_state.date_from.strftime('%Y-%m-%d')}")
+                st.info(f"To: {st.session_state.date_to.strftime('%Y-%m-%d')}")
+                
+            elif filter_type == "Custom":
+                st.markdown("#### 📆 Select Custom Range")
+                
+                # Initialize defaults if not set
+                if 'date_from' not in st.session_state:
+                    st.session_state.date_from = today - timedelta(days=30)
+                if 'date_to' not in st.session_state:
+                    st.session_state.date_to = today
+                
+                # UNRESTRICTED: No min/max date limits
                 custom_from = st.date_input(
-                    "From", 
-                    value=st.session_state.get('date_from', today - timedelta(days=30)),
+                    "From Date", 
+                    value=st.session_state.date_from,
                     key="custom_date_from_nav"
                 )
+                
                 custom_to = st.date_input(
-                    "To",
-                    value=st.session_state.get('date_to', today),
+                    "To Date",
+                    value=st.session_state.date_to,
                     key="custom_date_to_nav"
                 )
-                if st.button("Apply", type="primary", use_container_width=True):
-                    st.session_state.date_from = custom_from
-                    st.session_state.date_to = custom_to
-                    st.success("✅ Applied")
-                    st.rerun()
+                
+                # Apply button with validation
+                if st.button("✅ Apply Custom Range", type="primary", use_container_width=True, key="apply_custom_btn"):
+                    if custom_from <= custom_to:
+                        st.session_state.date_from = custom_from
+                        st.session_state.date_to = custom_to
+                        st.success(f"✅ Applied: {custom_from} to {custom_to}")
+                        st.rerun()
+                    else:
+                        st.error("❌ 'From Date' must be before 'To Date'")
+                
+                # Show current selection
+                st.info(f"📅 Current: {st.session_state.date_from} to {st.session_state.date_to}")
     
     st.markdown("---")
     
@@ -961,7 +989,7 @@ if HAS_OPTION_MENU:
         show_lead_status(data)
         
 else:
-    # Fallback navigation
+    # Fallback navigation with same unrestricted dates
     nav_col, filter_col = st.columns([5.5, 0.5])
     
     with nav_col:
@@ -969,10 +997,65 @@ else:
     
     with filter_col:
         st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
+        
         with st.popover("📅", use_container_width=True):
             st.markdown("### 📅 Date Filter")
-            filter_type = st.radio("Time Period", ["Week", "Month", "Year", "Custom"], horizontal=False)
-            # Similar filter logic as above
+            
+            filter_type = st.radio(
+                "Time Period", 
+                ["Week", "Month", "Year", "Custom"],
+                horizontal=False,
+                key="date_filter_type_fallback"
+            )
+            
+            today = date.today()
+            
+            if filter_type == "Week":
+                st.session_state.date_from = today - timedelta(days=7)
+                st.session_state.date_to = today
+                st.success("✅ Last 7 days")
+                
+            elif filter_type == "Month":
+                st.session_state.date_from = today - timedelta(days=30)
+                st.session_state.date_to = today
+                st.success("✅ Last 30 days")
+                
+            elif filter_type == "Year":
+                st.session_state.date_from = today - timedelta(days=365)
+                st.session_state.date_to = today
+                st.success("✅ Last 365 days")
+                
+            elif filter_type == "Custom":
+                st.markdown("#### 📆 Select Custom Range")
+                
+                if 'date_from' not in st.session_state:
+                    st.session_state.date_from = today - timedelta(days=30)
+                if 'date_to' not in st.session_state:
+                    st.session_state.date_to = today
+                
+                # UNRESTRICTED: No date limits
+                custom_from = st.date_input(
+                    "From Date", 
+                    value=st.session_state.date_from,
+                    key="custom_date_from_fb"
+                )
+                
+                custom_to = st.date_input(
+                    "To Date",
+                    value=st.session_state.date_to,
+                    key="custom_date_to_fb"
+                )
+                
+                if st.button("✅ Apply Custom Range", type="primary", use_container_width=True, key="apply_custom_fb"):
+                    if custom_from <= custom_to:
+                        st.session_state.date_from = custom_from
+                        st.session_state.date_to = custom_to
+                        st.success(f"✅ Applied: {custom_from} to {custom_to}")
+                        st.rerun()
+                    else:
+                        st.error("❌ 'From Date' must be before 'To Date'")
+                
+                st.info(f"📅 Current: {st.session_state.date_from} to {st.session_state.date_to}")
     
     st.markdown("---")
     
@@ -980,7 +1063,3 @@ else:
         show_executive_summary(data)
     with tabs[1]:
         show_lead_status(data)
-
-# Add footer with performance info
-st.markdown("---")
-st.caption(f"🚀 Dashboard loaded successfully | Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Data: {len(data.get('leads', [])):,} leads")
