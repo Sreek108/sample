@@ -883,7 +883,7 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
 
 # Lead Status Analysis
 def show_lead_status(d: Dict[str, pd.DataFrame]):
-    """Display enhanced lead status analysis with KPIs, Trends, and Agent Performance"""
+    """Display enhanced lead status analysis"""
     leads = d.get("leads", pd.DataFrame())
     stats = d.get("lead_statuses", pd.DataFrame())
     calls = d.get("calls", pd.DataFrame())
@@ -893,7 +893,7 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
         return
 
     try:
-        # Build status name mapping
+        # Build status mapping
         name_map = {}
         if not stats.empty and "StatusName_E" in stats.columns:
             name_map = dict(zip(stats["LeadStatusId"].astype(int), stats["StatusName_E"].astype(str)))
@@ -905,19 +905,19 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
         cutoff = L["CreatedOn"].max() if "CreatedOn" in L.columns else pd.Timestamp.today()
         L["age_days"] = (cutoff - L["CreatedOn"]).dt.days.fillna(0).astype(int)
 
-        # Get Won status ID
+        # Get Won status
         won_status_id = 9
         if not stats.empty and "StatusName_E" in stats.columns:
             won_status = stats[stats["StatusName_E"].str.lower() == "won"]
             if not won_status.empty:
                 won_status_id = int(won_status.iloc[0]["LeadStatusId"])
-        
-        # ===== NEW FEATURE 1: STATUS KPIs AT TOP =====
+
+        # ===== FEATURE 1: STATUS KPIs =====
         st.subheader("📊 Lead Status Overview")
         
-        # Define hot and cold lead categories
+        # Define categories based on YOUR actual status names
         hot_statuses = ['Meeting Scheduled', 'Negotiating Terms', 'Meeting Confirmed', 'Awaiting Budget']
-        cold_statuses = ['Follow up Needed', 'Interested', 'Attempted Contact', 'Callback Scheduled']
+        cold_statuses = ['Follow up Needed', 'Interested', 'Attempted Contact', 'Callback Scheduled', 'In Discussion']
         
         hot_leads = len(L[L["Status"].isin(hot_statuses)])
         cold_leads = len(L[L["Status"].isin(cold_statuses)])
@@ -960,22 +960,22 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
             </div>
             """, unsafe_allow_html=True)
 
-        # ===== NEW FEATURE 2: STATUS TREND CHART =====
+        # ===== FEATURE 2: STATUS TREND CHART =====
         st.markdown("---")
         st.subheader("📈 Status Trends Over Time")
         
-        if "CreatedOn" in L.columns:
-            L_with_month = L.copy()
-            L_with_month["Month"] = pd.to_datetime(L_with_month["CreatedOn"]).dt.to_period('M').astype(str)
-            trend_data = L_with_month.groupby(['Month', 'Status']).size().reset_index(name='Count')
+        if "CreatedOn" in L.columns and not L.empty:
+            L_trend = L.copy()
+            L_trend["Month"] = pd.to_datetime(L_trend["CreatedOn"]).dt.to_period('M').astype(str)
+            trend_data = L_trend.groupby(['Month', 'Status']).size().reset_index(name='Count')
             
-            # Get top 6 statuses for readability
+            # Get top 6 statuses
             top_statuses = L["Status"].value_counts().head(6).index.tolist()
-            trend_data_filtered = trend_data[trend_data["Status"].isin(top_statuses)]
+            trend_filtered = trend_data[trend_data["Status"].isin(top_statuses)]
             
-            if not trend_data_filtered.empty:
+            if len(trend_filtered) > 0:
                 fig_trend = px.line(
-                    trend_data_filtered, 
+                    trend_filtered, 
                     x='Month', 
                     y='Count', 
                     color='Status',
@@ -993,57 +993,54 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
                 )
                 
                 st.plotly_chart(fig_trend, use_container_width=True, config={'displayModeBar': False})
-            else:
-                st.info("📊 Insufficient data for trend analysis")
-        else:
-            st.info("📊 Date information unavailable for trend analysis")
 
-        # ===== NEW FEATURE 3: AGENT PERFORMANCE TABLE =====
+        # ===== FEATURE 3: AGENT PERFORMANCE =====
         st.markdown("---")
         st.subheader("👥 Agent Performance by Status")
         
-        if "AssignedAgentId" in L.columns:
-            # Calculate agent metrics
-            agent_stats = L.groupby("AssignedAgentId").agg(
+        # DEBUG: Check which agent column exists
+        agent_column = None
+        for col_name in ["AssignedAgentId", "AgentId", "AssignedTo", "OwnerId"]:
+            if col_name in L.columns:
+                agent_column = col_name
+                break
+        
+        if agent_column and not L[agent_column].isna().all():
+            # Calculate agent stats
+            agent_stats = L.groupby(agent_column).agg(
                 Total_Leads=("LeadId", "count"),
                 Won_Leads=("LeadStatusId", lambda x: (x == won_status_id).sum()),
-                Avg_Days_in_Status=("age_days", "mean")
+                Avg_Days=("age_days", "mean")
             ).reset_index()
             
             agent_stats["Conversion_Rate"] = (agent_stats["Won_Leads"] / agent_stats["Total_Leads"] * 100).round(1)
-            agent_stats["Avg_Days_in_Status"] = agent_stats["Avg_Days_in_Status"].round(1)
-            agent_stats = agent_stats.sort_values("Conversion_Rate", ascending=False)
+            agent_stats["Avg_Days"] = agent_stats["Avg_Days"].round(1)
+            agent_stats = agent_stats.sort_values("Conversion_Rate", ascending=False).head(10)
             
-            # Add performance indicator
             agent_stats["Performance"] = agent_stats["Conversion_Rate"].apply(
                 lambda x: '🟢 High' if x >= 5.0 else ('🟡 Medium' if x >= 2.0 else '🔴 Low')
             )
             
-            # Rename AgentId column
-            agent_stats = agent_stats.rename(columns={"AssignedAgentId": "Agent_ID"})
+            # Rename for display
+            agent_stats = agent_stats.rename(columns={agent_column: "Agent_ID"})
             
             st.dataframe(
                 agent_stats,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Agent_ID": st.column_config.NumberColumn("Agent ID", format="%d"),
+                    "Agent_ID": st.column_config.TextColumn("Agent ID"),
                     "Total_Leads": st.column_config.NumberColumn("Total Leads", format="%d"),
                     "Won_Leads": st.column_config.NumberColumn("Won", format="%d"),
-                    "Conversion_Rate": st.column_config.ProgressColumn(
-                        "Conversion Rate", 
-                        format="%.1f%%",
-                        min_value=0,
-                        max_value=15
-                    ),
-                    "Avg_Days_in_Status": st.column_config.NumberColumn("Avg Days", format="%.1f"),
+                    "Conversion_Rate": st.column_config.ProgressColumn("Conversion Rate", format="%.1f%%", min_value=0, max_value=20),
+                    "Avg_Days": st.column_config.NumberColumn("Avg Days", format="%.1f"),
                     "Performance": st.column_config.TextColumn("Performance")
                 }
             )
         else:
-            st.info("👥 Agent assignment data unavailable")
+            st.info(f"👥 Agent assignment data not available. Available columns: {', '.join(L.columns.tolist())}")
 
-        # ===== EXISTING: STATUS DISTRIBUTION =====
+        # ===== EXISTING FEATURES =====
         st.markdown("---")
         status_counts = L["Status"].value_counts().reset_index()
         status_counts.columns = ["Status", "Count"]
@@ -1072,23 +1069,18 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
         with col2:
             st.metric("📊 Total Leads", f"{total_leads:,}")
             st.metric("🎯 Won Deals", f"{won_count:,}")
-            if total_leads > 0:
-                st.metric("📈 Win Rate", f"{conversion_rate:.1f}%")
+            st.metric("📈 Win Rate", f"{conversion_rate:.1f}%")
 
-        # ===== EXISTING: DETAILED STATUS ANALYSIS =====
         st.markdown("---")
         st.subheader("📋 Detailed Status Analysis")
 
+        # Existing detailed table logic...
         meeting_rates = pd.DataFrame({"Status": [], "meeting_rate": []})
         if not meets.empty and "LeadId" in meets.columns:
             valid_meetings = meets[meets.get("MeetingStatusId", pd.Series()).isin([1, 6])]
             if not valid_meetings.empty:
                 meeting_data = valid_meetings.merge(L[["LeadId", "Status"]], on="LeadId", how="inner")
-                meeting_rates = (
-                    meeting_data.groupby("Status")["LeadId"]
-                    .nunique()
-                    .reset_index(name="meetings")
-                )
+                meeting_rates = meeting_data.groupby("Status")["LeadId"].nunique().reset_index(name="meetings")
 
         connection_rates = pd.DataFrame({"Status": [], "connect_rate": []})
         if not calls.empty and "LeadId" in calls.columns:
@@ -1117,7 +1109,7 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
 
         if not connection_rates.empty:
             summary_stats = summary_stats.merge(connection_rates, on="Status", how="left")
-            summary_stats["connect_rate"] = summary_stats["connect_rate"].fillna(0).round(3)
+            summary_stats["connect_rate"] = summary_stats["connect_rate"].fillna(0) * 100
         else:
             summary_stats["connect_rate"] = 0.0
 
@@ -1140,7 +1132,7 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
 
     except Exception as e:
         logger.error(f"Lead status analysis error: {e}")
-        st.error("❌ Error analyzing lead status data")
+        st.error(f"❌ Error analyzing lead status data: {e}")
 
 # Navigation
 NAV = [
