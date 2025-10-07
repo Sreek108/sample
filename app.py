@@ -45,7 +45,7 @@ BORDER_COL  = "rgba(0,0,0,0.10)"
 DIVIDER_COL = "rgba(0,0,0,0.12)"
 GRID_COL    = "rgba(0,0,0,0.06)"
 
-# Professional CSS with STREAMLIT DEFAULT METRIC STYLING
+# Professional CSS with SIMPLE KPI LAYOUT
 st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -70,61 +70,50 @@ section.main > div.block-container {{
 
 [data-testid="stSidebar"] {{ display: none; }}
 
-h1, h2, h3, h4, h5, h6, label, p, span, div, .st-emotion-cache-10trblm {{
+h1, h2, h3, h4, h5, h6, label, p, span, div {{
   color: var(--text-main);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
 }}
 
-/* KPI Metric Cards - STREAMLIT DEFAULT STYLING */
-.metric-card {{
-    background: var(--bg-surface);
-    padding: 20px 16px;
-    border-radius: 8px;
-    border: 1px solid var(--border-col);
-    text-align: center;
-    min-height: 120px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    transition: box-shadow 0.2s ease;
+/* Simple KPI Cards - Clean Layout */
+.kpi-container {{
+    text-align: left;
+    padding: 12px 8px;
+    background: transparent;
 }}
 
-.metric-card:hover {{
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-}}
-
-/* KPI Labels - Streamlit Default Metric Style */
-.metric-label {{
+/* KPI Labels - Small, Gray, Top */
+.kpi-label {{
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 400;
-    color: #808080;
+    color: #9CA3AF;
     margin-bottom: 8px;
-    text-transform: none;
-    letter-spacing: 0;
-    line-height: 1.4;
+    line-height: 1.2;
 }}
 
-/* KPI Values - Streamlit Default Metric Style */
-.metric-value {{
+/* KPI Values - Large, Bold, Bottom */
+.kpi-value {{
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
-    font-size: 36px;
+    font-size: 32px;
     font-weight: 600;
     color: {TEXT_MAIN};
     line-height: 1.2;
-    font-feature-settings: 'tnum' 1;
+}}
+
+/* Period Divider */
+.period-divider {{
+    margin: 32px 0 16px 0;
+    padding-top: 16px;
+    border-top: 1px solid #E5E7EB;
 }}
 
 .period-header {{
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
-    color: #374151;
-    margin: 24px 0 12px 0;
-    padding-bottom: 8px;
-    border-bottom: 2px solid {PRIMARY_GOLD};
+    color: #6B7280;
+    margin-bottom: 16px;
 }}
 
 /* Loading spinner */
@@ -172,7 +161,6 @@ def get_connection() -> Tuple[Optional[Any], Optional[callable]]:
     # Try Streamlit SQL connection first
     try:
         conn = st.connection("sql", type=SQLConnection)
-        # Test connection
         info = conn.query("SELECT @@SERVERNAME AS [server], DB_NAME() AS [db]", ttl=60)
         st.caption(f"✅ Connected to {info.iloc[0]['server']} / {info.iloc[0]['db']}")
         logger.info(f"Connected via Streamlit SQL to {info.iloc[0]['server']}")
@@ -185,7 +173,6 @@ def get_connection() -> Tuple[Optional[Any], Optional[callable]]:
         import sqlalchemy as sa
         from urllib.parse import quote_plus
         
-        # SECURITY: Use secrets without hardcoded defaults
         s = st.secrets.get("connections", {}).get("sql", {})
         
         required_keys = ["server", "database", "username", "password"]
@@ -203,11 +190,9 @@ def get_connection() -> Tuple[Optional[Any], Optional[callable]]:
         encrypt = s.get("encrypt", "no")
         tsc = s.get("TrustServerCertificate", "yes")
         
-        # Build connection string
         odbc_params = f"driver={quote_plus(driver)}&Encrypt={encrypt}&TrustServerCertificate={tsc}"
         url = f"mssql+pyodbc://{quote_plus(username)}:{quote_plus(password)}@{server}:1433/{quote_plus(database)}?{odbc_params}"
         
-        # OPTIMIZATION: Connection pooling for better performance
         engine = sa.create_engine(
             url, 
             fast_executemany=True,
@@ -223,7 +208,6 @@ def get_connection() -> Tuple[Optional[Any], Optional[callable]]:
         
         @st.cache_data(ttl=300, show_spinner=False, max_entries=50)
         def _run(sql: str):
-            """Execute SQL with caching and error handling"""
             try:
                 start_time = datetime.now()
                 result = pd.read_sql(sql, engine)
@@ -234,7 +218,6 @@ def get_connection() -> Tuple[Optional[Any], Optional[callable]]:
                 logger.error(f"Query failed: {e}")
                 raise
         
-        # Test connection
         test = _run("SELECT @@SERVERNAME AS [server], DB_NAME() AS [db]")
         st.caption(f"✅ Connected to {server} / {database} (SQLAlchemy + Pool)")
         logger.info(f"Connected via SQLAlchemy to {server}/{database}")
@@ -246,7 +229,7 @@ def get_connection() -> Tuple[Optional[Any], Optional[callable]]:
         st.info("💡 Please check your connection settings in `.streamlit/secrets.toml`")
         return None, None
 
-# OPTIMIZED Data Loading with Date Filtering
+# OPTIMIZED Data Loading
 @st.cache_data(ttl=3600, show_spinner=False, max_entries=10)
 def load_lookup_tables(_conn, _runner) -> Dict[str, pd.DataFrame]:
     """Load static reference tables (cached for 1 hour)"""
@@ -303,7 +286,7 @@ def load_lookup_tables(_conn, _runner) -> Dict[str, pd.DataFrame]:
 
 @st.cache_data(ttl=60, show_spinner=False, max_entries=20)
 def load_transactional_data(_conn, _runner, months_back: int = 12) -> Dict[str, pd.DataFrame]:
-    """OPTIMIZED: Load transactional data with date filtering (cached for 1 minute)"""
+    """Load transactional data with date filtering"""
     logger.info(f"Loading transactional data for last {months_back} months...")
     
     def q(sql: str, table_name: str = ""):
@@ -315,7 +298,6 @@ def load_transactional_data(_conn, _runner, months_back: int = 12) -> Dict[str, 
             logger.error(f"Failed to load {table_name}: {e}")
             return pd.DataFrame()
     
-    # OPTIMIZATION: Only load recent data to reduce memory usage
     tables = {
         "leads": q(f"""
             SELECT 
@@ -354,16 +336,15 @@ def load_transactional_data(_conn, _runner, months_back: int = 12) -> Dict[str, 
         """, "stage_audit")
     }
     
-    # Log data sizes for monitoring
     for name, df in tables.items():
         if not df.empty:
             logger.info(f"✅ {name}: {len(df):,} records loaded")
     
     return tables
 
-# OPTIMIZED Data Normalization
+# Data Normalization
 def normalize_dataframes(data: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
-    """Normalize dataframe columns and data types efficiently"""
+    """Normalize dataframe columns and data types"""
     logger.info("Normalizing dataframes...")
     
     try:
@@ -371,10 +352,8 @@ def normalize_dataframes(data: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFram
             if df is None or df.empty:
                 continue
                 
-            # Normalize column names once
             df.columns = df.columns.str.strip().str.lower()
             
-            # Efficient renaming and type conversion
             if key == "leads":
                 column_map = {
                     "leadid": "LeadId", "leadcode": "LeadCode", "leadstageid": "LeadStageId",
@@ -433,10 +412,10 @@ def normalize_dataframes(data: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFram
     logger.info("✅ Data normalization completed")
     return data
 
-# Initialize connection and load data
+# Initialize dashboard
 @st.cache_data(ttl=60)
 def initialize_dashboard():
-    """Initialize dashboard data with error handling"""
+    """Initialize dashboard data"""
     with st.spinner("🔄 Connecting to database..."):
         conn, runner = get_connection()
     
@@ -446,15 +425,12 @@ def initialize_dashboard():
     
     with st.spinner("📊 Loading dashboard data..."):
         try:
-            # Load data with optimizations
             lookups = load_lookup_tables(conn, runner)
             transactions = load_transactional_data(conn, runner, months_back=12)
             
-            # Combine and normalize
             data = {**lookups, **transactions}
             data = normalize_dataframes(data)
             
-            # Validate critical tables
             if not validate_dataframe(data.get("leads", pd.DataFrame()), ["LeadId", "CreatedOn"], "Leads"):
                 st.warning("⚠️ Lead data validation failed - some features may not work properly")
             
@@ -465,13 +441,13 @@ def initialize_dashboard():
             st.error(f"❌ Failed to load dashboard data: {e}")
             st.stop()
 
-# Load dashboard data
+# Load data
 data = initialize_dashboard()
 grain = "Month"
 
-# OPTIMIZED Funnel and Markets Analysis - CORRECTED
+# Funnel and Markets
 def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
-    """Render optimized funnel chart and top markets analysis"""
+    """Render funnel chart and top markets"""
     leads = d.get("leads", pd.DataFrame())
     stages = d.get("lead_stages", pd.DataFrame())
     audit = d.get("lead_stage_audit", pd.DataFrame())
@@ -483,7 +459,6 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
     total_leads = len(leads)
     
     try:
-        # Optimized funnel calculation
         if not audit.empty and not stages.empty and "StageId" in audit.columns:
             funnel_query = audit.merge(
                 stages[["LeadStageId", "StageName_E", "SortOrder"]],
@@ -512,10 +487,9 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
             funnel_df = funnel_df[funnel_df["Stage"] != "Lost"].reset_index(drop=True)
             
         else:
-            st.info("📊 Using simplified funnel - LeadStageAudit data unavailable")
+            st.info("📊 Using simplified funnel")
             funnel_df = pd.DataFrame([{"Stage": "Total Leads", "Count": total_leads, "SortOrder": 1}])
 
-        # Professional funnel chart
         colors = [PRIMARY_GOLD, ACCENT_BLUE, ACCENT_GREEN, ACCENT_AMBER, "#9b59b6"]
         
         fig = go.Figure(go.Funnel(
@@ -548,7 +522,6 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
         
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-        # Top markets analysis - FIXED FORMATTING ERROR
         if not countries.empty and "CountryId" in leads.columns:
             try:
                 market_analysis = (
@@ -592,16 +565,16 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
         logger.error(f"Funnel rendering error: {e}")
         st.error("📊 Error rendering funnel chart")
 
-# OPTIMIZED Executive Summary with CORRECTED Performance Trends
+# Executive Summary with CLEAN KPI LAYOUT
 def show_executive_summary(d: Dict[str, pd.DataFrame]):
-    """Display executive summary with optimized calculations and performance trends"""
+    """Display executive summary with clean KPI layout"""
     leads_all = d.get("leads", pd.DataFrame())
     lead_statuses = d.get("lead_statuses", pd.DataFrame())
 
     if not validate_dataframe(leads_all, ["LeadId", "CreatedOn"], "Leads"):
         return
 
-    # Resolve Won status ID efficiently
+    # Resolve Won status ID
     won_status_id = 9
     if not lead_statuses.empty and "StatusName_E" in lead_statuses.columns:
         won_mask = lead_statuses["StatusName_E"].str.lower() == "won"
@@ -612,12 +585,12 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
 
     st.subheader("📊 Performance KPIs")
 
-    # Get date range from session state
+    # Get date range
     today = date.today()
     date_from = st.session_state.get('date_from', today - timedelta(days=30))
     date_to = st.session_state.get('date_to', today)
 
-    # Efficient period calculations
+    # Period calculations
     today_ts = pd.Timestamp.today().normalize()
     periods = {
         'week': (today_ts - pd.Timedelta(days=today_ts.weekday()), today_ts),
@@ -630,7 +603,6 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
     @st.cache_data(ttl=300)
     def calculate_period_metrics(leads_data: pd.DataFrame, meetings_data: pd.DataFrame, 
                                 start_ts: pd.Timestamp, end_ts: pd.Timestamp, won_id: int):
-        """Calculate metrics for a specific period efficiently"""
         try:
             if "CreatedOn" in leads_data.columns:
                 dt_mask = (
@@ -662,51 +634,53 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
             logger.error(f"Metrics calculation error: {e}")
             return 0, 0.0, 0, 0
 
-    # Calculate all period metrics
+    # Calculate metrics
     metrics = {}
     for period_name, (start_ts, end_ts) in periods.items():
         metrics[period_name] = calculate_period_metrics(leads_all, meetings_all, start_ts, end_ts, won_status_id)
 
-    # Display KPI cards
+    # Display CLEAN KPI cards
     for period_name, period_label in [('week', 'Week To Date'), ('month', 'Month To Date'), ('year', 'Year To Date')]:
         total, conv_pct, meetings, won = metrics[period_name]
         
-        st.markdown(f'<div class="period-header">{period_label}</div>', unsafe_allow_html=True)
+        # Period header with divider
+        st.markdown(f'<div class="period-divider"><div class="period-header">{period_label}</div></div>', unsafe_allow_html=True)
+        
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">Total Leads</div>
-                <div class="metric-value">{format_number(total)}</div>
+            <div class="kpi-container">
+                <div class="kpi-label">Total Leads</div>
+                <div class="kpi-value">{format_number(total)}</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col2:
             st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">Conversion Rate</div>
-                <div class="metric-value">{conv_pct:.1f}%</div>
+            <div class="kpi-container">
+                <div class="kpi-label">Conversion Rate</div>
+                <div class="kpi-value">{conv_pct:.1f}%</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col3:
             st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">Meetings Scheduled</div>
-                <div class="metric-value">{format_number(meetings)}</div>
+            <div class="kpi-container">
+                <div class="kpi-label">Meetings Scheduled</div>
+                <div class="kpi-value">{format_number(meetings)}</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col4:
             st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">Won Deals</div>
-                <div class="metric-value">{format_number(won)}</div>
+            <div class="kpi-container">
+                <div class="kpi-label">Won Deals</div>
+                <div class="kpi-value">{format_number(won)}</div>
             </div>
             """, unsafe_allow_html=True)
 
-    # ============ PERFORMANCE TRENDS SECTION - CORRECTED ============
+    # Performance Trends
     st.markdown("---")
     st.subheader("📈 Performance Trends")
     
@@ -786,7 +760,6 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
         conv_ts = _index(conv_ts)
         meet_ts = _index(meet_ts)
 
-        # CORRECTED Chart styling functions
         def _apply_axes(fig, ys, title):
             ymin = float(pd.Series(ys).min()) if len(ys) else 0
             ymax = float(pd.Series(ys).max()) if len(ys) else 1
@@ -904,9 +877,9 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
     st.subheader("🎯 Lead Conversion Analysis")
     render_funnel_and_markets({**d, "leads": filtered_leads if not filtered_leads.empty else leads_all})
 
-# OPTIMIZED Lead Status Analysis
+# Lead Status Analysis
 def show_lead_status(d: Dict[str, pd.DataFrame]):
-    """Display comprehensive lead status analysis"""
+    """Display lead status analysis"""
     leads = d.get("leads", pd.DataFrame())
     stats = d.get("lead_statuses", pd.DataFrame())
     calls = d.get("calls", pd.DataFrame())
@@ -1034,7 +1007,7 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
         logger.error(f"Lead status analysis error: {e}")
         st.error("❌ Error analyzing lead status data")
 
-# NAVIGATION with UNRESTRICTED Custom Date Filter
+# Navigation
 NAV = [
     ("Executive", "speedometer2", "🎯 Executive Summary"),
     ("Lead Status", "people", "📈 Lead Status Analysis"),
@@ -1050,15 +1023,8 @@ if HAS_OPTION_MENU:
             styles={
                 "container": {"padding": "0!important", "background-color": BG_PAGE},
                 "icon": {"color": PRIMARY_GOLD, "font-size": "16px"},
-                "nav-link": {
-                    "font-size": "14px", "color": TEXT_MUTED, 
-                    "font-weight": "500", "--hover-color": "#EEF2FF"
-                },
-                "nav-link-selected": {
-                    "background-color": BG_SURFACE, "color": TEXT_MAIN, 
-                    "border-bottom": f"3px solid {PRIMARY_GOLD}",
-                    "font-weight": "600"
-                },
+                "nav-link": {"font-size": "14px", "color": TEXT_MUTED, "font-weight": "500", "--hover-color": "#EEF2FF"},
+                "nav-link-selected": {"background-color": BG_SURFACE, "color": TEXT_MAIN, "border-bottom": f"3px solid {PRIMARY_GOLD}", "font-weight": "600"},
             }
         )
     
@@ -1068,12 +1034,7 @@ if HAS_OPTION_MENU:
         with st.popover("📅", use_container_width=True):
             st.markdown("### 📅 Date Filter")
             
-            filter_type = st.radio(
-                "Time Period", 
-                ["Week", "Month", "Year", "Custom"],
-                horizontal=False, 
-                key="date_filter_type_nav"
-            )
+            filter_type = st.radio("Time Period", ["Week", "Month", "Year", "Custom"], horizontal=False, key="date_filter_type_nav")
             
             today = date.today()
             
@@ -1106,17 +1067,8 @@ if HAS_OPTION_MENU:
                 if 'date_to' not in st.session_state:
                     st.session_state.date_to = today
                 
-                custom_from = st.date_input(
-                    "From Date", 
-                    value=st.session_state.date_from,
-                    key="custom_date_from_nav"
-                )
-                
-                custom_to = st.date_input(
-                    "To Date",
-                    value=st.session_state.date_to,
-                    key="custom_date_to_nav"
-                )
+                custom_from = st.date_input("From Date", value=st.session_state.date_from, key="custom_date_from_nav")
+                custom_to = st.date_input("To Date", value=st.session_state.date_to, key="custom_date_to_nav")
                 
                 if st.button("✅ Apply Custom Range", type="primary", use_container_width=True, key="apply_custom_btn"):
                     if custom_from <= custom_to:
@@ -1147,13 +1099,7 @@ else:
         
         with st.popover("📅", use_container_width=True):
             st.markdown("### 📅 Date Filter")
-            
-            filter_type = st.radio(
-                "Time Period", 
-                ["Week", "Month", "Year", "Custom"],
-                horizontal=False,
-                key="date_filter_type_fallback"
-            )
+            filter_type = st.radio("Time Period", ["Week", "Month", "Year", "Custom"], horizontal=False, key="date_filter_type_fallback")
             
             today = date.today()
             
@@ -1161,36 +1107,23 @@ else:
                 st.session_state.date_from = today - timedelta(days=7)
                 st.session_state.date_to = today
                 st.success("✅ Last 7 days")
-                
             elif filter_type == "Month":
                 st.session_state.date_from = today - timedelta(days=30)
                 st.session_state.date_to = today
                 st.success("✅ Last 30 days")
-                
             elif filter_type == "Year":
                 st.session_state.date_from = today - timedelta(days=365)
                 st.session_state.date_to = today
                 st.success("✅ Last 365 days")
-                
             elif filter_type == "Custom":
                 st.markdown("#### 📆 Select Custom Range")
-                
                 if 'date_from' not in st.session_state:
                     st.session_state.date_from = today - timedelta(days=30)
                 if 'date_to' not in st.session_state:
                     st.session_state.date_to = today
                 
-                custom_from = st.date_input(
-                    "From Date", 
-                    value=st.session_state.date_from,
-                    key="custom_date_from_fb"
-                )
-                
-                custom_to = st.date_input(
-                    "To Date",
-                    value=st.session_state.date_to,
-                    key="custom_date_to_fb"
-                )
+                custom_from = st.date_input("From Date", value=st.session_state.date_from, key="custom_date_from_fb")
+                custom_to = st.date_input("To Date", value=st.session_state.date_to, key="custom_date_to_fb")
                 
                 if st.button("✅ Apply Custom Range", type="primary", use_container_width=True, key="apply_custom_fb"):
                     if custom_from <= custom_to:
