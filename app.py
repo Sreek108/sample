@@ -469,7 +469,7 @@ def initialize_dashboard():
 data = initialize_dashboard()
 grain = "Month"
 
-# OPTIMIZED Funnel and Markets Analysis
+# OPTIMIZED Funnel and Markets Analysis - CORRECTED
 def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
     """Render optimized funnel chart and top markets analysis"""
     leads = d.get("leads", pd.DataFrame())
@@ -492,7 +492,6 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
                 how="inner"
             )
             
-            # Efficient groupby with proper sorting
             funnel_df = (
                 funnel_query.groupby(["SortOrder", "StageName_E"], as_index=False)["LeadId"]
                 .nunique()
@@ -500,7 +499,6 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
                 .sort_values("SortOrder", ascending=True)
             )
             
-            # Clean stage names
             stage_rename = {
                 "New": "New Leads", 
                 "Qualified": "Qualified", 
@@ -526,7 +524,7 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
             x=funnel_df['Count'].tolist(),
             textposition="inside",
             textinfo="value+percent initial",
-            textfont=dict(color="white", size=14, family="Inter", weight="bold"),
+            textfont=dict(color="white", size=14),
             marker=dict(
                 color=colors[:len(funnel_df)],
                 line=dict(width=2, color="white")
@@ -539,12 +537,12 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
             margin=dict(l=10, r=10, t=60, b=20),
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color=TEXT_MAIN, family="Inter"),
+            font=dict(color=TEXT_MAIN),
             title=dict(
                 text=f"Sales Funnel - {total_leads:,} Total Leads",
                 x=0.5, 
                 xanchor='center',
-                font=dict(size=20, color=TEXT_MAIN, family="Inter", weight="bold")
+                font=dict(size=20, color=TEXT_MAIN)
             )
         )
         
@@ -571,26 +569,14 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
                     
                     st.subheader("🌍 Top Markets")
                     
-                    # FIXED: Corrected column configuration - removed problematic format
                     st.dataframe(
                         top_markets[["Country", "Leads", "Share"]],
                         use_container_width=True,
                         hide_index=True,
                         column_config={
-                            "Country": st.column_config.TextColumn(
-                                "Country", 
-                                width="medium"
-                            ),
-                            "Leads": st.column_config.NumberColumn(
-                                "Leads"
-                                # FIXED: Removed format parameter that was causing error
-                            ),
-                            "Share": st.column_config.ProgressColumn(
-                                "Market Share", 
-                                format="%.1f%%",  # This format works correctly
-                                min_value=0, 
-                                max_value=100
-                            )
+                            "Country": st.column_config.TextColumn("Country", width="medium"),
+                            "Leads": st.column_config.NumberColumn("Leads"),
+                            "Share": st.column_config.ProgressColumn("Market Share", format="%.1f%%", min_value=0, max_value=100)
                         }
                     )
                 else:
@@ -606,7 +592,7 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
         logger.error(f"Funnel rendering error: {e}")
         st.error("📊 Error rendering funnel chart")
 
-# OPTIMIZED Executive Summary with PERFORMANCE TRENDS
+# OPTIMIZED Executive Summary with CORRECTED Performance Trends
 def show_executive_summary(d: Dict[str, pd.DataFrame]):
     """Display executive summary with optimized calculations and performance trends"""
     leads_all = d.get("leads", pd.DataFrame())
@@ -720,7 +706,7 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
             </div>
             """, unsafe_allow_html=True)
 
-    # ============ PERFORMANCE TRENDS SECTION ============
+    # ============ PERFORMANCE TRENDS SECTION - CORRECTED ============
     st.markdown("---")
     st.subheader("📈 Performance Trends")
     
@@ -800,17 +786,18 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
         conv_ts = _index(conv_ts)
         meet_ts = _index(meet_ts)
 
+        # CORRECTED Chart styling functions
         def _apply_axes(fig, ys, title):
             ymin = float(pd.Series(ys).min()) if len(ys) else 0
             ymax = float(pd.Series(ys).max()) if len(ys) else 1
             pad = max(1.0, (ymax - ymin) * 0.12)
             fig.update_layout(
                 height=220,
-                title=dict(text=title, x=0.01, font=dict(size=13, color=TEXT_MUTED, family="Inter", weight="600")),
+                title=dict(text=title, x=0.01, font=dict(size=13, color=TEXT_MUTED)),
                 margin=dict(l=10, r=10, t=35, b=20),
                 plot_bgcolor="rgba(0,0,0,0)",
                 paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color=TEXT_MAIN, family="Inter"),
+                font=dict(color=TEXT_MAIN),
                 showlegend=False
             )
             fig.update_xaxes(showgrid=True, gridcolor=GRID_COL, tickfont=dict(color=TEXT_MUTED, size=10), nticks=6)
@@ -1035,7 +1022,7 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
             hide_index=True,
             column_config={
                 "Status": st.column_config.TextColumn("Status", width="medium"),
-                "Leads": st.column_config.NumberColumn("Lead Count", format="%,d"),
+                "Leads": st.column_config.NumberColumn("Lead Count"),
                 "Market_Share": st.column_config.ProgressColumn("Market Share", format="%.1f%%", min_value=0, max_value=100),
                 "Avg_Age_Days": st.column_config.NumberColumn("Avg Age (Days)", format="%.1f"),
                 "Meeting_Rate": st.column_config.ProgressColumn("Meeting Rate", format="%.1f%%", min_value=0, max_value=100),
@@ -1119,7 +1106,6 @@ if HAS_OPTION_MENU:
                 if 'date_to' not in st.session_state:
                     st.session_state.date_to = today
                 
-                # UNRESTRICTED: No date limits
                 custom_from = st.date_input(
                     "From Date", 
                     value=st.session_state.date_from,
