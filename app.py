@@ -1138,7 +1138,7 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
             
             key_metrics_html = f"""
             <div class="info-card">
-                <h4>📊 Key Metrics</h4>
+                <h4> Key Metrics</h4>
                 {metrics_items}
             </div>
             """
@@ -1154,7 +1154,7 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
             
             top_status_html = f"""
             <div class="info-card">
-                <h4>🏆 Top 3 Statuses</h4>
+                <h4> Top 3 Statuses</h4>
                 {status_items}
             </div>
             """
