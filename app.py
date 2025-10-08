@@ -1322,7 +1322,7 @@ def show_ai_ml_insights(d: Dict[str, pd.DataFrame]):
         
         # ===== SECTION 1: LEAD SCORING =====
         st.markdown("---")
-        st.subheader("🎯 Lead Scoring & Prioritization")
+        st.subheader("Lead Scoring & Prioritization")
         
         # Calculate engagement score
         L['EngagementScore'] = (
@@ -1429,7 +1429,7 @@ def show_ai_ml_insights(d: Dict[str, pd.DataFrame]):
             st.plotly_chart(fig_priority, use_container_width=True, config={'displayModeBar': False})
         
         # Top 10 Priority Leads
-        st.markdown("#### 🏆 Top 10 Priority Leads to Contact Today")
+        st.markdown("#### Top 10 Priority Leads to Contact Today")
         
         top_leads = L.nlargest(10, 'LeadScore')[
             ['LeadCode', 'LeadStatusId', 'LeadScore', 'Priority', 'MeetingCount', 'CallCount', 'LeadAge_Days']
@@ -1463,7 +1463,7 @@ def show_ai_ml_insights(d: Dict[str, pd.DataFrame]):
         
         # ===== SECTION 2: CHURN RISK =====
         st.markdown("---")
-        st.subheader("🔄 Churn Risk Detection")
+        st.subheader("Churn Risk Detection")
         
         # Calculate churn risk
         L['ChurnRisk'] = np.minimum(100, (
@@ -1523,7 +1523,7 @@ def show_ai_ml_insights(d: Dict[str, pd.DataFrame]):
         
         # Top at-risk leads
         if at_risk_count > 0:
-            st.markdown("#### 🚨 Top 10 At-Risk Leads Requiring Immediate Action")
+            st.markdown("#### Top 10 At-Risk Leads Requiring Immediate Action")
             
             at_risk_leads = L[L['IsAtRisk'] == 1].nlargest(10, 'ChurnRisk')[
                 ['LeadCode', 'LeadStatusId', 'ChurnRisk', 'LeadAge_Days', 'MeetingCount', 'CallCount']
@@ -1553,7 +1553,7 @@ def show_ai_ml_insights(d: Dict[str, pd.DataFrame]):
         
         # ===== SECTION 3: LEAD SEGMENTATION =====
         st.markdown("---")
-        st.subheader("🎭 Lead Segmentation Analysis")
+        st.subheader("Lead Segmentation Analysis")
         
         # Simple rule-based segmentation
         def segment_lead(row):
@@ -1608,7 +1608,7 @@ def show_ai_ml_insights(d: Dict[str, pd.DataFrame]):
         
         # ===== SECTION 4: RECOMMENDATIONS =====
         st.markdown("---")
-        st.subheader("💡 AI-Powered Recommendations")
+        st.subheader("AI-Powered Recommendations")
         
         recommendations = []
         
