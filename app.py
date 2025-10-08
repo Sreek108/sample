@@ -1641,9 +1641,9 @@ def show_ai_ml_insights(d: Dict[str, pd.DataFrame]):
         
 # Navigation
 NAV = [
-    ("Executive", "speedometer2", "🎯 Executive Summary"),
-    ("Lead Status", "people", "📈 Lead Status Analysis"),
-    ("AI Insights", "robot", "🤖 AI/ML Insights"),
+    ("Executive", "speedometer2", "Executive Summary"),
+    ("Lead Status", "people", "Lead Status Analysis"),
+    ("AI Insights", "robot", "AI/ML Insights"),
 ]
 
 if HAS_OPTION_MENU:
