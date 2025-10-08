@@ -710,15 +710,9 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
     
     trend_col1, trend_col2 = st.columns([2, 1])
     with trend_col1:
-        trend_style = st.radio(
-            "Chart Style", 
-            ["Line", "Bars", "Bullet"], 
-            index=0, 
-            horizontal=True, 
-            key="trend_style_exec"
-        )
+        trend_style = st.radio("Chart Style", ["Line", "Bars", "Bullet"], index=0, horizontal=True, key="trend_style_exec")
     with trend_col2:
-        st.caption("")
+        st.caption("📊 Indexed to first period = 100")
     
     start_day = pd.Timestamp(date_from)
     end_day = pd.Timestamp(date_to)
@@ -736,6 +730,7 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
         leads_local = filtered_leads.copy()
         if "CreatedOn" in leads_local.columns:
             dt = pd.to_datetime(leads_local["CreatedOn"], errors="coerce")
+            # FIXED: Convert to date only (removes time component)
             if grain == "Week":
                 leads_local["period"] = dt.dt.to_period("W").apply(lambda p: p.start_time.date())
             elif grain == "Month":
@@ -758,6 +753,7 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
         if not meetings_all.empty and "StartDateTime" in meetings_all.columns:
             m = meetings_all.copy()
             m["dt"] = pd.to_datetime(m["StartDateTime"], errors="coerce")
+            # FIXED: Convert to date only
             if grain == "Week":
                 m["period"] = m["dt"].dt.to_period("W").apply(lambda p: p.start_time.date())
             elif grain == "Month":
@@ -797,7 +793,14 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
                 font=dict(color=TEXT_MAIN),
                 showlegend=False
             )
-            fig.update_xaxes(showgrid=True, gridcolor=GRID_COL, tickfont=dict(color=TEXT_MUTED, size=10), nticks=6)
+            fig.update_xaxes(
+                showgrid=True, 
+                gridcolor=GRID_COL, 
+                tickfont=dict(color=TEXT_MUTED, size=10),
+                tickformat='%b %d',  # FIXED: Format as "Jan 01"
+                tickangle=-45,
+                nticks=6
+            )
             fig.update_yaxes(showgrid=True, gridcolor=GRID_COL, tickfont=dict(color=TEXT_MUTED, size=10), nticks=5, range=[ymin - pad, ymax + pad])
             return fig
 
@@ -809,7 +812,8 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
                 return _apply_axes(fig, [0, 1], title)
             fig = go.Figure()
             fig.add_trace(go.Scatter(
-                x=df["period"], y=df["idx"], 
+                x=df["period"],  # Now properly formatted as dates
+                y=df["idx"], 
                 mode="lines+markers",
                 line=dict(color=color, width=3, shape="spline"),
                 marker=dict(size=8, color=color, line=dict(color="white", width=2))
@@ -824,7 +828,8 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
                 return _apply_axes(fig, [0, 1], title)
             fig = go.Figure()
             fig.add_trace(go.Bar(
-                x=df["period"], y=df["idx"],
+                x=df["period"],  # Now properly formatted as dates
+                y=df["idx"],
                 marker=dict(color=color, line=dict(color="rgba(255,255,255,0.6)", width=1)),
                 opacity=0.9
             ))
@@ -875,7 +880,7 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
             with s3: 
                 st.plotly_chart(tile_bar(meet_ts, PRIMARY_GOLD, "Meetings Trend"), use_container_width=True, config={'displayModeBar': False})
                     
-        else:  # Bullet
+        else:
             with s1: 
                 st.plotly_chart(tile_bullet(leads_ts, "Leads Index", ACCENT_BLUE), use_container_width=True, config={'displayModeBar': False})
             with s2: 
@@ -885,6 +890,7 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
     
     else:
         st.warning("⚠️ No leads found in the selected date range")
+
 
     st.markdown("---")
     st.subheader("🎯 Lead Conversion Snapshot")
