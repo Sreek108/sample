@@ -712,7 +712,7 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
     with trend_col1:
         trend_style = st.radio("Chart Style", ["Line", "Bars", "Bullet"], index=0, horizontal=True, key="trend_style_exec")
     with trend_col2:
-        st.caption("📊 Indexed to first period = 100")
+        st.caption("")
     
     start_day = pd.Timestamp(date_from)
     end_day = pd.Timestamp(date_to)
