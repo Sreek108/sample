@@ -1218,8 +1218,7 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
             
             st.markdown(top_status_html, unsafe_allow_html=True)
 
-        # ===== STATUS COMPARISON MATRIX =====
-        st.markdown("---")
+       st.markdown("---")
         st.subheader("📊 Status Comparison Matrix")
         
         comparison = L.groupby('Status').agg(
@@ -1254,11 +1253,11 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
             height=450,
             column_config={
                 "Status": st.column_config.TextColumn("Status", width="large"),
-                "Total_Leads": st.column_config.NumberColumn("Leads", format="%,d"),
-                "Win_Rate": st.column_config.ProgressColumn("Win Rate", format="%.1f%%", min_value=0, max_value=20),
-                "Avg_Age": st.column_config.NumberColumn("Avg Age (Days)", format="%.0f"),
-                "Meetings": st.column_config.NumberColumn("Meetings", format="%d"),
-                "Health_Score": st.column_config.ProgressColumn("Health Score", format="%.0f", min_value=0, max_value=100)
+                "Total_Leads": st.column_config.NumberColumn("Leads"),  # FIXED: Removed %,d format
+                "Win_Rate": st.column_config.ProgressColumn("Win Rate", format="%.1f%%", min_value=0, max_value=20),  # Already correct
+                "Avg_Age": st.column_config.NumberColumn("Avg Age (Days)", format="%.0f"),  # Already correct
+                "Meetings": st.column_config.NumberColumn("Meetings"),  # FIXED: Removed %d format
+                "Health_Score": st.column_config.ProgressColumn("Health Score", format="%.0f", min_value=0, max_value=100)  # Already correct
             }
         )
 
