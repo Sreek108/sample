@@ -557,18 +557,32 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
                     
                     st.subheader("🌍 Top Markets")
                     
+                    # Format Leads as text for left alignment
+                    top_markets['Leads_Display'] = top_markets['Leads'].apply(lambda x: str(x))
+                    
                     st.dataframe(
-                        top_markets[["Country", "Leads", "Share"]],
+                        top_markets[["Country", "Leads_Display", "Share"]],
                         use_container_width=True,
                         hide_index=True,
                         column_config={
                             "Country": st.column_config.TextColumn("Country", width="medium"),
-                            "Leads": st.column_config.NumberColumn("Leads"),
-                            "Share": st.column_config.ProgressColumn("Market Share", format="%.1f%%", min_value=0, max_value=100)
+                            "Leads_Display": st.column_config.TextColumn("Leads", width="small"),
+                            "Share": st.column_config.ProgressColumn(
+                                "Market Share", 
+                                format="%.1f%%", 
+                                min_value=0, 
+                                max_value=100
+                            )
                         }
                     )
                 else:
                     st.info("📍 No market data available")
+                    
+            except Exception as e:
+                logger.error(f"Market analysis error: {e}")
+                st.info("📍 Market data temporarily unavailable")
+        else:
+            st.info("📍 Country data unavailable")
                     
             except Exception as e:
                 logger.error(f"Market analysis error: {e}")
