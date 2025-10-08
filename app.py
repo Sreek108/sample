@@ -1275,10 +1275,375 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
     except Exception as e:
         logger.error(f"Lead status analysis error: {e}")
         st.error(f"❌ Error analyzing lead status data: {e}")
+
+# ===== AI/ML INSIGHTS PAGE =====
+def show_ai_ml_insights(d: Dict[str, pd.DataFrame]):
+    """Display AI/ML powered insights and predictions"""
+    
+    st.title("🤖 AI/ML Insights")
+    st.markdown("*Intelligent analytics powered by machine learning*")
+    
+    leads = d.get("leads", pd.DataFrame())
+    meetings = d.get("agent_meeting_assignment", pd.DataFrame())
+    calls = d.get("calls", pd.DataFrame())
+    audit = d.get("lead_stage_audit", pd.DataFrame())
+    
+    if not validate_dataframe(leads, ["LeadId", "LeadStatusId"], "Leads"):
+        return
+    
+    try:
+        # ===== DATA PREPARATION =====
+        L = leads.copy()
+        L['CreatedOn'] = pd.to_datetime(L.get('CreatedOn'), errors='coerce')
+        L['LeadAge_Days'] = (pd.Timestamp.today() - L['CreatedOn']).dt.days.fillna(0).astype(int)
+        
+        # Calculate engagement metrics
+        if not meetings.empty and 'LeadId' in meetings.columns:
+            meeting_counts = meetings.groupby('LeadId').size().reset_index(name='MeetingCount')
+            L = L.merge(meeting_counts, on='LeadId', how='left')
+        else:
+            L['MeetingCount'] = 0
+        
+        if not calls.empty and 'LeadId' in calls.columns:
+            call_counts = calls.groupby('LeadId').size().reset_index(name='CallCount')
+            L = L.merge(call_counts, on='LeadId', how='left')
+        else:
+            L['CallCount'] = 0
+        
+        if not audit.empty and 'LeadId' in audit.columns:
+            stage_changes = audit.groupby('LeadId').size().reset_index(name='StageChanges')
+            L = L.merge(stage_changes, on='LeadId', how='left')
+        else:
+            L['StageChanges'] = 0
+        
+        L['MeetingCount'] = L['MeetingCount'].fillna(0)
+        L['CallCount'] = L['CallCount'].fillna(0)
+        L['StageChanges'] = L['StageChanges'].fillna(0)
+        
+        # ===== SECTION 1: LEAD SCORING =====
+        st.markdown("---")
+        st.subheader("🎯 Lead Scoring & Prioritization")
+        
+        # Calculate engagement score
+        L['EngagementScore'] = (
+            (L['MeetingCount'] * 30) +
+            (L['CallCount'] * 10) +
+            (L['StageChanges'] * 15)
+        )
+        
+        # Calculate freshness score
+        L['FreshnessScore'] = np.maximum(0, 100 - L['LeadAge_Days'])
+        
+        # Calculate final lead score
+        L['LeadScore'] = (
+            (L['EngagementScore'] * 0.6) +
+            (L['FreshnessScore'] * 0.4)
+        )
+        
+        # Normalize to 0-100
+        if L['LeadScore'].max() > 0:
+            L['LeadScore'] = (L['LeadScore'] / L['LeadScore'].max() * 100).round(0)
+        else:
+            L['LeadScore'] = 0
+        
+        # Priority classification
+        L['Priority'] = pd.cut(
+            L['LeadScore'],
+            bins=[-1, 30, 60, 100],
+            labels=['🔴 Low', '🟡 Medium', '🟢 High']
+        )
+        
+        # Display KPIs
+        col1, col2, col3, col4 = st.columns(4)
+        
+        high_priority = int((L['Priority'] == '🟢 High').sum())
+        medium_priority = int((L['Priority'] == '🟡 Medium').sum())
+        low_priority = int((L['Priority'] == '🔴 Low').sum())
+        avg_score = float(L['LeadScore'].mean())
+        
+        with col1:
+            st.markdown(f"""
+            <div class="kpi-container">
+                <div class="kpi-label">🟢 High Priority</div>
+                <div class="kpi-value">{format_number(high_priority)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="kpi-container">
+                <div class="kpi-label">🟡 Medium Priority</div>
+                <div class="kpi-value">{format_number(medium_priority)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown(f"""
+            <div class="kpi-container">
+                <div class="kpi-label">🔴 Low Priority</div>
+                <div class="kpi-value">{format_number(low_priority)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col4:
+            st.markdown(f"""
+            <div class="kpi-container">
+                <div class="kpi-label">📊 Avg Lead Score</div>
+                <div class="kpi-value">{avg_score:.1f}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Lead Score Distribution
+        col_chart1, col_chart2 = st.columns(2)
+        
+        with col_chart1:
+            fig_score_dist = px.histogram(
+                L,
+                x='LeadScore',
+                nbins=20,
+                title='Lead Score Distribution',
+                labels={'LeadScore': 'Lead Score', 'count': 'Number of Leads'},
+                color_discrete_sequence=[ACCENT_BLUE]
+            )
+            fig_score_dist.update_layout(
+                height=350,
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(color=TEXT_MAIN),
+                showlegend=False
+            )
+            st.plotly_chart(fig_score_dist, use_container_width=True, config={'displayModeBar': False})
+        
+        with col_chart2:
+            priority_counts = L['Priority'].value_counts()
+            fig_priority = px.pie(
+                values=priority_counts.values,
+                names=priority_counts.index,
+                title='Priority Distribution',
+                color_discrete_sequence=[ACCENT_RED, PRIMARY_GOLD, ACCENT_GREEN]
+            )
+            fig_priority.update_layout(
+                height=350,
+                font=dict(color=TEXT_MAIN)
+            )
+            st.plotly_chart(fig_priority, use_container_width=True, config={'displayModeBar': False})
+        
+        # Top 10 Priority Leads
+        st.markdown("#### 🏆 Top 10 Priority Leads to Contact Today")
+        
+        top_leads = L.nlargest(10, 'LeadScore')[
+            ['LeadCode', 'LeadStatusId', 'LeadScore', 'Priority', 'MeetingCount', 'CallCount', 'LeadAge_Days']
+        ].copy()
+        
+        # Get status names
+        statuses = d.get("lead_statuses", pd.DataFrame())
+        if not statuses.empty and "StatusName_E" in statuses.columns:
+            status_map = dict(zip(statuses["LeadStatusId"].astype(int), statuses["StatusName_E"].astype(str)))
+            top_leads['Status'] = top_leads['LeadStatusId'].map(status_map)
+        else:
+            top_leads['Status'] = 'Unknown'
+        
+        top_leads = top_leads[['LeadCode', 'Status', 'LeadScore', 'Priority', 'MeetingCount', 'CallCount', 'LeadAge_Days']]
+        top_leads.columns = ['Lead Code', 'Status', 'Score', 'Priority', 'Meetings', 'Calls', 'Age (Days)']
+        
+        st.dataframe(
+            top_leads,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Lead Code": st.column_config.TextColumn("Lead Code", width="medium"),
+                "Status": st.column_config.TextColumn("Status", width="medium"),
+                "Score": st.column_config.ProgressColumn("Score", format="%.0f", min_value=0, max_value=100),
+                "Priority": st.column_config.TextColumn("Priority", width="small"),
+                "Meetings": st.column_config.NumberColumn("Meetings"),
+                "Calls": st.column_config.NumberColumn("Calls"),
+                "Age (Days)": st.column_config.NumberColumn("Age (Days)")
+            }
+        )
+        
+        # ===== SECTION 2: CHURN RISK =====
+        st.markdown("---")
+        st.subheader("🔄 Churn Risk Detection")
+        
+        # Calculate churn risk
+        L['ChurnRisk'] = np.minimum(100, (
+            (L['LeadAge_Days'] / 100 * 50) +
+            (np.maximum(0, 5 - L['CallCount']) * 10)
+        )).round(0)
+        
+        L['IsAtRisk'] = (
+            (L['LeadAge_Days'] > 30) &
+            (L['MeetingCount'] == 0) &
+            (L['CallCount'] < 2)
+        ).astype(int)
+        
+        # KPIs
+        col1, col2, col3 = st.columns(3)
+        
+        at_risk_count = int(L['IsAtRisk'].sum())
+        at_risk_pct = float(at_risk_count / len(L) * 100)
+        avg_risk = float(L['ChurnRisk'].mean())
+        
+        with col1:
+            st.markdown(f"""
+            <div class="kpi-container">
+                <div class="kpi-label">🚨 At-Risk Leads</div>
+                <div class="kpi-value">{format_number(at_risk_count)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="kpi-container">
+                <div class="kpi-label">📊 At-Risk %</div>
+                <div class="kpi-value">{at_risk_pct:.1f}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown(f"""
+            <div class="kpi-container">
+                <div class="kpi-label">⚠️ Avg Churn Risk</div>
+                <div class="kpi-value">{avg_risk:.0f}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Churn Risk Distribution
+        risk_bins = pd.cut(L['ChurnRisk'], bins=[0, 30, 60, 100], labels=['🟢 Low', '🟡 Medium', '🔴 High'])
+        risk_counts = risk_bins.value_counts()
+        
+        fig_risk = px.pie(
+            values=risk_counts.values,
+            names=risk_counts.index,
+            title='Churn Risk Distribution',
+            color_discrete_sequence=[ACCENT_GREEN, PRIMARY_GOLD, ACCENT_RED]
+        )
+        fig_risk.update_layout(height=400, font=dict(color=TEXT_MAIN))
+        st.plotly_chart(fig_risk, use_container_width=True, config={'displayModeBar': False})
+        
+        # Top at-risk leads
+        if at_risk_count > 0:
+            st.markdown("#### 🚨 Top 10 At-Risk Leads Requiring Immediate Action")
+            
+            at_risk_leads = L[L['IsAtRisk'] == 1].nlargest(10, 'ChurnRisk')[
+                ['LeadCode', 'LeadStatusId', 'ChurnRisk', 'LeadAge_Days', 'MeetingCount', 'CallCount']
+            ].copy()
+            
+            if not statuses.empty:
+                at_risk_leads['Status'] = at_risk_leads['LeadStatusId'].map(status_map)
+            else:
+                at_risk_leads['Status'] = 'Unknown'
+            
+            at_risk_leads = at_risk_leads[['LeadCode', 'Status', 'ChurnRisk', 'LeadAge_Days', 'MeetingCount', 'CallCount']]
+            at_risk_leads.columns = ['Lead Code', 'Status', 'Risk %', 'Age (Days)', 'Meetings', 'Calls']
+            
+            st.dataframe(
+                at_risk_leads,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Lead Code": st.column_config.TextColumn("Lead Code"),
+                    "Status": st.column_config.TextColumn("Status"),
+                    "Risk %": st.column_config.ProgressColumn("Risk %", format="%.0f%%", min_value=0, max_value=100),
+                    "Age (Days)": st.column_config.NumberColumn("Age (Days)"),
+                    "Meetings": st.column_config.NumberColumn("Meetings"),
+                    "Calls": st.column_config.NumberColumn("Calls")
+                }
+            )
+        
+        # ===== SECTION 3: LEAD SEGMENTATION =====
+        st.markdown("---")
+        st.subheader("🎭 Lead Segmentation Analysis")
+        
+        # Simple rule-based segmentation
+        def segment_lead(row):
+            if row['LeadScore'] >= 70 and row['LeadAge_Days'] < 30:
+                return '🔥 Hot Prospects'
+            elif row['CallCount'] >= 3 and row['MeetingCount'] > 0:
+                return '🎯 Engaged Nurturers'
+            elif row['LeadAge_Days'] > 90 or (row['CallCount'] == 0 and row['MeetingCount'] == 0):
+                return '💤 Cold Leads'
+            else:
+                return '⏳ Long-term Opportunities'
+        
+        L['Segment'] = L.apply(segment_lead, axis=1)
+        
+        # Display segment KPIs
+        col1, col2, col3, col4 = st.columns(4)
+        
+        segments = {
+            '🔥 Hot Prospects': col1,
+            '🎯 Engaged Nurturers': col2,
+            '⏳ Long-term Opportunities': col3,
+            '💤 Cold Leads': col4
+        }
+        
+        for seg_name, col in segments.items():
+            count = int((L['Segment'] == seg_name).sum())
+            with col:
+                st.markdown(f"""
+                <div class="kpi-container">
+                    <div class="kpi-label">{seg_name}</div>
+                    <div class="kpi-value">{format_number(count)}</div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # Segment scatter plot
+        fig_segments = px.scatter(
+            L.sample(min(1000, len(L))),
+            x='EngagementScore',
+            y='FreshnessScore',
+            color='Segment',
+            title='Lead Segmentation: Engagement vs Freshness',
+            labels={'EngagementScore': 'Engagement Score', 'FreshnessScore': 'Freshness Score'},
+            color_discrete_sequence=[ACCENT_RED, ACCENT_BLUE, ACCENT_GREEN, PRIMARY_GOLD]
+        )
+        fig_segments.update_layout(
+            height=500,
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color=TEXT_MAIN)
+        )
+        st.plotly_chart(fig_segments, use_container_width=True, config={'displayModeBar': False})
+        
+        # ===== SECTION 4: RECOMMENDATIONS =====
+        st.markdown("---")
+        st.subheader("💡 AI-Powered Recommendations")
+        
+        recommendations = []
+        
+        if high_priority > 0:
+            recommendations.append(f"✅ **Immediate Action**: Focus on {high_priority:,} high-priority leads today for maximum conversion potential")
+        
+        if at_risk_count > 50:
+            recommendations.append(f"⚠️ **Urgent**: Re-engage {at_risk_count:,} at-risk leads within 48 hours to prevent churn")
+        
+        hot_prospects = int((L['Segment'] == '🔥 Hot Prospects').sum())
+        if hot_prospects > 0:
+            recommendations.append(f"🔥 **Hot Zone**: {hot_prospects:,} hot prospects need aggressive follow-up - assign to your best agents")
+        
+        cold_leads = int((L['Segment'] == '💤 Cold Leads').sum())
+        if cold_leads > 100:
+            cold_pct = cold_leads / len(L) * 100
+            recommendations.append(f"💤 **Clean Up**: {cold_leads:,} ({cold_pct:.1f}%) cold leads - consider re-engagement campaign or removal")
+        
+        if not recommendations:
+            recommendations.append("✅ **All Good**: Your lead management is on track!")
+        
+        for i, rec in enumerate(recommendations, 1):
+            st.markdown(f"{i}. {rec}")
+        
+    except Exception as e:
+        logger.error(f"AI/ML Insights error: {e}")
+        st.error(f"❌ Error generating insights: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+        
 # Navigation
 NAV = [
     ("Executive", "speedometer2", "🎯 Executive Summary"),
     ("Lead Status", "people", "📈 Lead Status Analysis"),
+    ("AI Insights", "robot", "🤖 AI/ML Insights"),
 ]
 
 if HAS_OPTION_MENU:
@@ -1355,6 +1720,9 @@ if HAS_OPTION_MENU:
         show_executive_summary(data)
     elif selected == "Lead Status":
         show_lead_status(data)
+    elif selected == "AI Insights": 
+        show_ai_ml_insights(data)
+
         
 else:
     nav_col, filter_col = st.columns([5.5, 0.5])
@@ -1410,3 +1778,5 @@ else:
         show_executive_summary(data)
     with tabs[1]:
         show_lead_status(data)
+    with tabs[2]:
+            show_ai_ml_insights(data)
