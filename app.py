@@ -838,28 +838,79 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
         def tile_bullet(df, title, bar_color):
             if df.empty or len(df) == 0:
                 fig = go.Figure()
-                fig.add_annotation(text="No data", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(color=TEXT_MUTED))
-                return _apply_axes(fig, [0, 1], title)
+                fig.add_annotation(
+                    text="Insufficient data", 
+                    xref="paper", yref="paper", 
+                    x=0.5, y=0.5, 
+                    showarrow=False, 
+                    font=dict(color=TEXT_MUTED, size=12)
+                )
+                fig.update_layout(
+                    height=160, 
+                    margin=dict(l=10, r=10, t=30, b=10), 
+                    paper_bgcolor="rgba(0,0,0,0)"
+                )
+                return fig
             
+            # Get current value (last/only data point)
             cur = float(df["idx"].iloc[-1])
-            fig = go.Figure(go.Indicator(
-                mode="number+gauge+delta",
-                value=cur,
-                number={'valueformat': ".0f", 'font': {'color': TEXT_MAIN, 'size': 20}},
-                delta={'reference': 100, 'valueformat': '.1f'},
-                gauge={
-                    'shape': "bullet",
-                    'axis': {'range': [80, 120]},
-                    'steps': [
-                        {'range': [80, 95], 'color': "rgba(239,68,68,0.15)"},
-                        {'range': [95, 105], 'color': "rgba(234,179,8,0.15)"},
-                        {'range': [105, 120], 'color': "rgba(34,197,94,0.15)"},
-                    ],
-                    'bar': {'color': bar_color, 'thickness': 0.75},
-                    'threshold': {'line': {'color': '#111827', 'width': 2}, 'value': 100}
-                }
-            ))
-            fig.update_layout(height=160, margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor="rgba(0,0,0,0)")
+            
+            # If only 1 data point, show it without delta comparison
+            if len(df) == 1:
+                fig = go.Figure(go.Indicator(
+                    mode="number+gauge",  # REMOVED "delta" since we have no previous value
+                    value=cur,
+                    number={
+                        'valueformat': ".0f", 
+                        'font': {'color': TEXT_MAIN, 'size': 24},
+                        'suffix': " (baseline)"
+                    },
+                    gauge={
+                        'shape': "bullet",
+                        'axis': {'range': [80, 120], 'visible': True},
+                        'steps': [
+                            {'range': [80, 95], 'color': "rgba(239,68,68,0.15)"},
+                            {'range': [95, 105], 'color': "rgba(234,179,8,0.15)"},
+                            {'range': [105, 120], 'color': "rgba(34,197,94,0.15)"},
+                        ],
+                        'bar': {'color': bar_color, 'thickness': 0.75},
+                        'threshold': {
+                            'line': {'color': '#111827', 'width': 2}, 
+                            'value': 100,
+                            'thickness': 0.75
+                        }
+                    }
+                ))
+                fig.update_layout(
+                    height=160, 
+                    margin=dict(l=10, r=10, t=30, b=10), 
+                    paper_bgcolor="rgba(0,0,0,0)"
+                )
+            else:
+                # Multiple data points - show with delta
+                fig = go.Figure(go.Indicator(
+                    mode="number+gauge+delta",
+                    value=cur,
+                    number={'valueformat': ".0f", 'font': {'color': TEXT_MAIN, 'size': 20}},
+                    delta={'reference': 100, 'valueformat': '.1f'},
+                    gauge={
+                        'shape': "bullet",
+                        'axis': {'range': [80, 120]},
+                        'steps': [
+                            {'range': [80, 95], 'color': "rgba(239,68,68,0.15)"},
+                            {'range': [95, 105], 'color': "rgba(234,179,8,0.15)"},
+                            {'range': [105, 120], 'color': "rgba(34,197,94,0.15)"},
+                        ],
+                        'bar': {'color': bar_color, 'thickness': 0.75},
+                        'threshold': {'line': {'color': '#111827', 'width': 2}, 'value': 100}
+                    }
+                ))
+                fig.update_layout(
+                    height=160, 
+                    margin=dict(l=10, r=10, t=30, b=10), 
+                    paper_bgcolor="rgba(0,0,0,0)"
+                )
+            
             return fig
 
         s1, s2, s3 = st.columns(3)
