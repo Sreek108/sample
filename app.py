@@ -1279,6 +1279,7 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
 # ===== AI/ML INSIGHTS PAGE =====
 def show_ai_ml_insights(d: Dict[str, pd.DataFrame]):
     """Display AI/ML powered insights and predictions"""
+    
     leads = d.get("leads", pd.DataFrame())
     meetings = d.get("agent_meeting_assignment", pd.DataFrame())
     calls = d.get("calls", pd.DataFrame())
