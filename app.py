@@ -177,7 +177,7 @@ def get_connection() -> Tuple[Optional[Any], Optional[callable]]:
     try:
         conn = st.connection("sql", type=SQLConnection)
         info = conn.query("SELECT @@SERVERNAME AS [server], DB_NAME() AS [db]", ttl=60)
-        st.caption(f"✅ Connected to {info.iloc[0]['server']} / {info.iloc[0]['db']}")
+        
         logger.info(f"Connected via Streamlit SQL to {info.iloc[0]['server']}")
         return conn, None
     except Exception as e1:
