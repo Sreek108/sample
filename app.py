@@ -528,7 +528,7 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
             paper_bgcolor="rgba(0,0,0,0)",
             font=dict(color=TEXT_MAIN),
             title=dict(
-                text=f"",
+                text=f"Sales Funnel - {total_leads:,} Total Leads",
                 x=0.5, 
                 xanchor='center',
                 font=dict(size=20, color=TEXT_MAIN)
@@ -537,6 +537,7 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
         
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
+        # Top Markets Section
         if not countries.empty and "CountryId" in leads.columns:
             try:
                 market_analysis = (
@@ -577,12 +578,6 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
                     )
                 else:
                     st.info("📍 No market data available")
-                    
-            except Exception as e:
-                logger.error(f"Market analysis error: {e}")
-                st.info("📍 Market data temporarily unavailable")
-        else:
-            st.info("📍 Country data unavailable")
                     
             except Exception as e:
                 logger.error(f"Market analysis error: {e}")
