@@ -1280,8 +1280,8 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
 def show_ai_ml_insights(d: Dict[str, pd.DataFrame]):
     """Display AI/ML powered insights and predictions"""
     
-    st.title("🤖 AI/ML Insights")
-    st.markdown("*Intelligent analytics powered by machine learning*")
+    st.title("")
+    st.markdown("")
     
     leads = d.get("leads", pd.DataFrame())
     meetings = d.get("agent_meeting_assignment", pd.DataFrame())
