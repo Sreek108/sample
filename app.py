@@ -1052,12 +1052,22 @@ def show_lead_status(d: Dict[str, pd.DataFrame]):
                 )
                 
                 fig_trend.update_layout(
-                    height=400,
+                    height=500,  # INCREASED from 400 to 500
                     hovermode='x unified',
                     plot_bgcolor='rgba(0,0,0,0)',
                     paper_bgcolor='rgba(0,0,0,0)',
                     font=dict(color=TEXT_MAIN),
-                    legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
+                    legend=dict(
+                        orientation="h",  # Horizontal
+                        yanchor="bottom",
+                        y=-0.4,  # INCREASED from -0.3 to -0.4 (more space below chart)
+                        xanchor="center",
+                        x=0.5,
+                        font=dict(size=11),  # ADDED: Slightly smaller font
+                        itemsizing='constant',  # ADDED: Consistent item sizing
+                        tracegroupgap=10  # ADDED: Space between legend items
+                    ),
+                    margin=dict(l=40, r=40, t=60, b=120)  # INCREASED bottom margin from default to 120
                 )
                 
                 st.plotly_chart(fig_trend, use_container_width=True, config={'displayModeBar': False})
