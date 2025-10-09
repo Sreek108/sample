@@ -1318,7 +1318,6 @@ def show_ai_ml_insights(d: Dict[str, pd.DataFrame]):
         L['StageChanges'] = L['StageChanges'].fillna(0)
         
         # ===== SECTION 1: LEAD SCORING =====
-        st.markdown("---")
         st.subheader("Lead Scoring & Prioritization")
         
         # Calculate engagement score
