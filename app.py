@@ -603,6 +603,13 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
     leads_all = d.get("leads", pd.DataFrame())
     if "IsActive" in leads_all.columns:
         leads_all = leads_all[leads_all["IsActive"] == 1].copy()
+    # ✅ DEBUG - REMOVE AFTER TESTING
+    st.info(f"""
+    **🔍 Debug Info:**
+    - Total leads loaded from database: {len(d.get("leads", pd.DataFrame()))}
+    - Active leads after filter: {len(leads_all)}
+    - Date range in data: {leads_all['CreatedOn'].min()} to {leads_all['CreatedOn'].max()}
+    """)
     lead_statuses = d.get("lead_statuses", pd.DataFrame())
 
     if not validate_dataframe(leads_all, ["LeadId", "CreatedOn"], "Leads"):
