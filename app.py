@@ -300,64 +300,59 @@ def load_lookup_tables(_conn, _runner) -> Dict[str, pd.DataFrame]:
     return tables
 
 @st.cache_data(ttl=60, show_spinner=False, max_entries=20)
-def load_transactional_data(_conn, runner, months_back: int = 12) -> Dict[str, pd.DataFrame]:
+def load_transactional_data(_conn, _runner, months_back: int = 12) -> Dict[str, pd.DataFrame]:
     """Load transactional data with date filtering"""
     logger.info(f"Loading transactional data for last {months_back} months...")
     
-    def q(sql: str, tablename: str):
+    def q(sql: str, table_name: str = ""):
         try:
-            if _conn:  # ← Changed from conn to _conn
-                return _conn.query(sql, ttl=60)  # ← Changed from conn to _conn
-            return runner(sql)
+            if _conn:
+                return _conn.query(sql, ttl=60)
+            return _runner(sql)
         except Exception as e:
-            logger.error(f"Failed to load {tablename}: {e}")
+            logger.error(f"Failed to load {table_name}: {e}")
             return pd.DataFrame()
     
     tables = {
-        # ✅ FIXED: Load ALL active leads (no date filter)
-        "leads": q("""
+        "leads": q(f"""
             SELECT 
                 LeadId, LeadCode, LeadStageId, LeadStatusId, LeadScoringId,
-                AssignedAgentId, CountryId, CityRegionId, CreatedOn, 
-                ModifiedOn, IsActive
+                AssignedAgentId, CountryId, CityRegionId, CreatedOn, IsActive
             FROM dbo.Lead 
-            WHERE IsActive = 1
+            WHERE CreatedOn >= DATEADD(MONTH, -{months_back}, GETDATE())
             ORDER BY CreatedOn DESC
         """, "leads"),
         
-        # Keep date filters for meetings (performance)
         "agent_meeting_assignment": q(f"""
             SELECT 
                 AssignmentId, LeadId, StartDateTime, EndDateTime, 
                 MeetingStatusId, AgentId
-            FROM dbo.AgentMeetingAssignment 
+            FROM dbo.AgentMeetingAssignment
             WHERE StartDateTime >= DATEADD(MONTH, -{months_back}, GETDATE())
             ORDER BY StartDateTime DESC
         """, "meetings"),
         
-        # Keep date filters for calls (performance)
         "calls": q(f"""
             SELECT 
-                LeadCallId, LeadId, CallDateTime, DurationSeconds, 
+                LeadCallId, LeadId, CallDateTime, DurationSeconds,
                 CallStatusId, SentimentId, AssignedAgentId, CallDirection
-            FROM dbo.LeadCallRecord 
+            FROM dbo.LeadCallRecord
             WHERE CallDateTime >= DATEADD(MONTH, -{months_back}, GETDATE())
             ORDER BY CallDateTime DESC
         """, "calls"),
         
-        # Keep date filters for stage audit (performance)
         "lead_stage_audit": q(f"""
             SELECT 
                 AuditId, LeadId, StageId, CreatedOn
-            FROM dbo.LeadStageAudit 
+            FROM dbo.LeadStageAudit
             WHERE CreatedOn >= DATEADD(MONTH, -{months_back}, GETDATE())
             ORDER BY CreatedOn DESC
-        """, "stageaudit"),
+        """, "stage_audit")
     }
     
     for name, df in tables.items():
         if not df.empty:
-            logger.info(f"{name}: {len(df)} records loaded")
+            logger.info(f"✅ {name}: {len(df):,} records loaded")
     
     return tables
 
@@ -608,13 +603,6 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
     leads_all = d.get("leads", pd.DataFrame())
     if "IsActive" in leads_all.columns:
         leads_all = leads_all[leads_all["IsActive"] == 1].copy()
-    # ✅ DEBUG - REMOVE AFTER TESTING
-    st.info(f"""
-    **🔍 Debug Info:**
-    - Total leads loaded from database: {len(d.get("leads", pd.DataFrame()))}
-    - Active leads after filter: {len(leads_all)}
-    - Date range in data: {leads_all['CreatedOn'].min()} to {leads_all['CreatedOn'].max()}
-    """)
     lead_statuses = d.get("lead_statuses", pd.DataFrame())
 
     if not validate_dataframe(leads_all, ["LeadId", "CreatedOn"], "Leads"):
@@ -1807,3 +1795,4 @@ else:
         show_lead_status(data)
     with tabs[2]:
             show_ai_ml_insights(data)
+        
