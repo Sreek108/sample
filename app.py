@@ -319,8 +319,7 @@ def load_transactional_data(_conn, _runner, months_back: int = 12) -> Dict[str, 
                 LeadId, LeadCode, LeadStageId, LeadStatusId, LeadScoringId,
                 AssignedAgentId, CountryId, CityRegionId, CreatedOn, IsActive
             FROM dbo.Lead 
-            WHERE IsActive = 1 
-            AND CreatedOn >= DATEADD(MONTH, -{months_back}, GETDATE())
+            WHERE CreatedOn >= DATEADD(MONTH, -{months_back}, GETDATE())
             ORDER BY CreatedOn DESC
         """, "leads"),
         
@@ -600,6 +599,8 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
 def show_executive_summary(d: Dict[str, pd.DataFrame]):
     """Display executive summary with clean KPI layout"""
     leads_all = d.get("leads", pd.DataFrame())
+    if "IsActive" in leads_all.columns:
+        leads_all = leads_all[leads_all["IsActive"] == 1].copy()
     lead_statuses = d.get("lead_statuses", pd.DataFrame())
 
     if not validate_dataframe(leads_all, ["LeadId", "CreatedOn"], "Leads"):
@@ -632,38 +633,48 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
     meetings_all = d.get("agent_meeting_assignment", pd.DataFrame())
 
     @st.cache_data(ttl=300)
-    def calculate_period_metrics(leads_data: pd.DataFrame, meetings_data: pd.DataFrame, 
-                                start_ts: pd.Timestamp, end_ts: pd.Timestamp, won_id: int):
+    def calculate_period_metrics(leads_data: pd.DataFrame, meetings_data: pd.DataFrame, start_ts: pd.Timestamp, end_ts: pd.Timestamp, won_id: int):
+    """
+    Calculate metrics for a time period - FIXED VERSION
+    Uses Lead table CreatedOn for date filtering
+    """
         try:
-            if "CreatedOn" in leads_data.columns:
+            # ✅ FIX: Filter ACTIVE leads by CreatedOn from Lead table
+            if "CreatedOn" in leads_data.columns and "IsActive" in leads_data.columns:
+                # Filter for active leads first
+                active_leads = leads_data[leads_data["IsActive"] == 1].copy()
+                
+                # Then filter by date range
                 dt_mask = (
-                    (pd.to_datetime(leads_data["CreatedOn"], errors="coerce") >= start_ts) & 
-                    (pd.to_datetime(leads_data["CreatedOn"], errors="coerce") <= end_ts)
+                    (pd.to_datetime(active_leads["CreatedOn"], errors='coerce') >= start_ts) &
+                    (pd.to_datetime(active_leads["CreatedOn"], errors='coerce') <= end_ts)
                 )
-                period_leads = leads_data[dt_mask].copy()
+                period_leads = active_leads[dt_mask].copy()
             else:
                 period_leads = pd.DataFrame()
-
+            
+            # Filter meetings
             period_meetings = pd.DataFrame()
             if not meetings_data.empty and "StartDateTime" in meetings_data.columns:
                 dt_mask = (
-                    (pd.to_datetime(meetings_data["StartDateTime"], errors="coerce") >= start_ts) & 
-                    (pd.to_datetime(meetings_data["StartDateTime"], errors="coerce") <= end_ts)
+                    (pd.to_datetime(meetings_data["StartDateTime"], errors='coerce') >= start_ts) &
+                    (pd.to_datetime(meetings_data["StartDateTime"], errors='coerce') <= end_ts)
                 )
                 valid_meetings = meetings_data[dt_mask]
                 if "MeetingStatusId" in valid_meetings.columns:
                     period_meetings = valid_meetings[valid_meetings["MeetingStatusId"].isin([1, 6])]
-
+            
+            # Calculate metrics
             total = len(period_leads)
-            won = int((period_leads.get("LeadStatusId", pd.Series(dtype="int64")) == won_id).sum()) if total > 0 else 0
+            won = int(period_leads.get("LeadStatusId", pd.Series(dtype='int64')).eq(won_id).sum()) if total > 0 else 0
             conv_pct = (won / total * 100.0) if total > 0 else 0.0
             meetings = int(period_meetings["LeadId"].nunique()) if "LeadId" in period_meetings.columns and len(period_meetings) > 0 else 0
             
-            return total, conv_pct, meetings, won
+            return (total, conv_pct, meetings, won)
             
         except Exception as e:
             logger.error(f"Metrics calculation error: {e}")
-            return 0, 0.0, 0, 0
+            return (0, 0.0, 0, 0)
 
     # Calculate metrics
     metrics = {}
