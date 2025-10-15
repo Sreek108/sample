@@ -462,7 +462,7 @@ grain = "Month"
 
 # Funnel and Markets
 def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
-    """Render funnel chart and top markets"""
+    """Render funnel chart and top markets - FIXED to show only active leads"""
     leads = d.get("leads", pd.DataFrame())
     stages = d.get("lead_stages", pd.DataFrame())
     audit = d.get("lead_stage_audit", pd.DataFrame())
@@ -471,15 +471,22 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
     if not validate_dataframe(leads, ["LeadId"], "Leads"):
         return
 
-    total_leads = len(leads)
+    # ✅ FIX: Filter for active leads only
+    active_leads = leads[leads.get("IsActive", 1) == 1].copy()
+    total_leads = len(active_leads)
     
     try:
         if not audit.empty and not stages.empty and "StageId" in audit.columns:
+            # ✅ FIX: Merge audit with active leads to filter out inactive leads
             funnel_query = audit.merge(
                 stages[["LeadStageId", "StageName_E", "SortOrder"]],
                 left_on="StageId",
                 right_on="LeadStageId",
                 how="inner"
+            ).merge(
+                active_leads[["LeadId"]],  # ✅ ADD THIS: Only keep active leads
+                on="LeadId",
+                how="inner"  # ✅ ADD THIS: Inner join filters out inactive leads
             )
             
             funnel_df = (
@@ -494,8 +501,8 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
                 "Qualified": "Qualified", 
                 "Followup Process": "Follow-up",
                 "Meeting Scheduled": "Meetings", 
-                "Negotiation": "Negotiation", 
-                "Won": "Won"
+                "Negotiation": "Under Negotiation",  # ✅ Updated for consistency
+                "Won": "Converted"  # ✅ Better naming
             }
             
             funnel_df["Stage"] = funnel_df["StageName_E"].map(stage_rename).fillna(funnel_df["StageName_E"])
@@ -505,7 +512,7 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
             st.info("📊 Using simplified funnel")
             funnel_df = pd.DataFrame([{"Stage": "Total Leads", "Count": total_leads, "SortOrder": 1}])
 
-        colors = [PRIMARY_GOLD, ACCENT_BLUE, ACCENT_GREEN, ACCENT_AMBER, "#9b59b6"]
+        colors = [PRIMARY_GOLD, ACCENT_BLUE, ACCENT_GREEN, ACCENT_AMBER, "#9b59b6", "#000000", "#e74c3c"]
         
         fig = go.Figure(go.Funnel(
             name='Sales Funnel',
@@ -513,7 +520,7 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
             x=funnel_df['Count'].tolist(),
             textposition="inside",
             textinfo="value+percent initial",
-            textfont=dict(color="white", size=14),
+            textfont=dict(color="white", size=14, family="Inter"),
             marker=dict(
                 color=colors[:len(funnel_df)],
                 line=dict(width=2, color="white")
@@ -526,22 +533,22 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
             margin=dict(l=10, r=10, t=60, b=20),
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color=TEXT_MAIN),
+            font=dict(color=TEXT_MAIN, family="Inter"),
             title=dict(
-                text=f"",
+                text="",
                 x=0.5, 
                 xanchor='center',
-                font=dict(size=20, color=TEXT_MAIN)
+                font=dict(size=20, color=TEXT_MAIN, family="Inter")
             )
         )
         
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-        # Top Markets Section
-        if not countries.empty and "CountryId" in leads.columns:
+        # Top Markets Section - ✅ Also use active leads only
+        if not countries.empty and "CountryId" in active_leads.columns:
             try:
                 market_analysis = (
-                    leads.groupby("CountryId", dropna=True, as_index=False)
+                    active_leads.groupby("CountryId", dropna=True, as_index=False)  # ✅ Changed from 'leads' to 'active_leads'
                     .size()
                     .rename(columns={"size": "Leads"})
                     .merge(
