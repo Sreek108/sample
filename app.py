@@ -462,6 +462,12 @@ def initialize_dashboard():
 
 # Load data
 data = initialize_dashboard()
+data_unfiltered = {
+    "leads": data.get("leads", pd.DataFrame()),
+    "agent_meeting_assignment": data.get("agent_meeting_assignment", pd.DataFrame()),
+    "lead_statuses": data.get("lead_statuses", pd.DataFrame()),
+    "lead_stages": data.get("lead_stages", pd.DataFrame()),
+    "countries": data.get("countries", pd.DataFrame()),
 grain = "Month"
 
 # Funnel and Markets
@@ -1744,7 +1750,7 @@ if HAS_OPTION_MENU:
     st.markdown("---")
     
     if selected == "Executive":
-        show_executive_summary(data)
+        show_executive_summary(data_unfiltered)
     elif selected == "Lead Status":
         show_lead_status(data)
     elif selected == "AI Insights": 
@@ -1802,7 +1808,7 @@ else:
     st.markdown("---")
     
     with tabs[0]:
-        show_executive_summary(data)
+        show_executive_summary(data_unfiltered)
     with tabs[1]:
         show_lead_status(data)
     with tabs[2]:
