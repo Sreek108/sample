@@ -634,10 +634,10 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
 
     @st.cache_data(ttl=300)
     def calculate_period_metrics(leads_data: pd.DataFrame, meetings_data: pd.DataFrame, start_ts: pd.Timestamp, end_ts: pd.Timestamp, won_id: int):
-    """
-    Calculate metrics for a time period - FIXED VERSION
-    Uses Lead table CreatedOn for date filtering
-    """
+        """
+        Calculate metrics for a time period - FIXED VERSION
+        Uses Lead table CreatedOn for date filtering
+        """
         try:
             # ✅ FIX: Filter ACTIVE leads by CreatedOn from Lead table
             if "CreatedOn" in leads_data.columns and "IsActive" in leads_data.columns:
@@ -675,7 +675,6 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
         except Exception as e:
             logger.error(f"Metrics calculation error: {e}")
             return (0, 0.0, 0, 0)
-
     # Calculate metrics
     metrics = {}
     for period_name, (start_ts, end_ts) in periods.items():
