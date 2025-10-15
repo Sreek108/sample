@@ -468,6 +468,7 @@ data_unfiltered = {
     "lead_statuses": data.get("lead_statuses", pd.DataFrame()),
     "lead_stages": data.get("lead_stages", pd.DataFrame()),
     "countries": data.get("countries", pd.DataFrame()),
+}
 grain = "Month"
 
 # Funnel and Markets
