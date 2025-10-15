@@ -300,14 +300,14 @@ def load_lookup_tables(_conn, _runner) -> Dict[str, pd.DataFrame]:
     return tables
 
 @st.cache_data(ttl=60, show_spinner=False, max_entries=20)
-def load_transactional_data(conn, runner, months_back: int = 12) -> Dict[str, pd.DataFrame]:
+def load_transactional_data(_conn, runner, months_back: int = 12) -> Dict[str, pd.DataFrame]:
     """Load transactional data with date filtering"""
     logger.info(f"Loading transactional data for last {months_back} months...")
     
     def q(sql: str, tablename: str):
         try:
-            if conn:
-                return conn.query(sql, ttl=60)
+            if _conn:  # ← Changed from conn to _conn
+                return _conn.query(sql, ttl=60)  # ← Changed from conn to _conn
             return runner(sql)
         except Exception as e:
             logger.error(f"Failed to load {tablename}: {e}")
@@ -360,6 +360,7 @@ def load_transactional_data(conn, runner, months_back: int = 12) -> Dict[str, pd
             logger.info(f"{name}: {len(df)} records loaded")
     
     return tables
+
 # Data Normalization
 def normalize_dataframes(data: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
     """Normalize dataframe columns and data types"""
