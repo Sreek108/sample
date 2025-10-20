@@ -636,10 +636,6 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
 
     @st.cache_data(ttl=5)
     def calculate_period_metrics(leads_data: pd.DataFrame, meetings_data: pd.DataFrame, start_ts: pd.Timestamp, end_ts: pd.Timestamp, won_id: int):
-    """
-    Calculate metrics for a time period - FIXED VERSION
-    ✅ Filters ACTIVE leads first, then by date
-    """
         try:
         # ✅ CRITICAL FIX: Filter for ACTIVE leads FIRST
         if "IsActive" in leads_data.columns:
