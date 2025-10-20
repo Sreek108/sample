@@ -635,12 +635,12 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
     meetings_all = d.get("agent_meeting_assignment", pd.DataFrame())
 
     @st.cache_data(ttl=5)
-def calculate_period_metrics(leads_data: pd.DataFrame, meetings_data: pd.DataFrame, start_ts: pd.Timestamp, end_ts: pd.Timestamp, won_id: int):
+    def calculate_period_metrics(leads_data: pd.DataFrame, meetings_data: pd.DataFrame, start_ts: pd.Timestamp, end_ts: pd.Timestamp, won_id: int):
     """
     Calculate metrics for a time period - FIXED VERSION
     ✅ Filters ACTIVE leads first, then by date
     """
-    try:
+        try:
         # ✅ CRITICAL FIX: Filter for ACTIVE leads FIRST
         if "IsActive" in leads_data.columns:
             active_leads = leads_data[leads_data["IsActive"] == 1].copy()
@@ -676,7 +676,7 @@ def calculate_period_metrics(leads_data: pd.DataFrame, meetings_data: pd.DataFra
         
         return (total, conv_pct, meetings, won)
         
-    except Exception as e:
+        except Exception as e:
         logger.error(f"Metrics calculation error: {e}")
         return (0, 0.0, 0, 0)
     # Calculate metrics
