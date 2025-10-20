@@ -598,7 +598,6 @@ def render_funnel_and_markets(d: Dict[str, pd.DataFrame]):
 # Executive Summary with CLEAN KPI LAYOUT
 def show_executive_summary(d: Dict[str, pd.DataFrame]):
     """Display executive summary with clean KPI layout"""
-    st.cache_data.clear()
     if 'cache_version' not in st.session_state:
         st.session_state.cache_version = 0
     leads_all = d.get("leads", pd.DataFrame())
@@ -635,7 +634,7 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
 
     meetings_all = d.get("agent_meeting_assignment", pd.DataFrame())
 
-    @st.cache_data(ttl=5)
+    @st.cache_data(ttl=0)  # Cache disabled for testing - change back to 5 after verification
     def calculate_period_metrics(leads_data: pd.DataFrame, meetings_data: pd.DataFrame, start_ts: pd.Timestamp, end_ts: pd.Timestamp, won_id: int):
         """
         Calculate metrics for a time period - FIXED VERSION
