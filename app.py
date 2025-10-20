@@ -635,48 +635,53 @@ def show_executive_summary(d: Dict[str, pd.DataFrame]):
     meetings_all = d.get("agent_meeting_assignment", pd.DataFrame())
 
     @st.cache_data(ttl=5)
-    def calculate_period_metrics(leads_data: pd.DataFrame, meetings_data: pd.DataFrame, start_ts: pd.Timestamp, end_ts: pd.Timestamp, won_id: int):
-        """
-        Calculate metrics for a time period - FIXED VERSION
-        Uses Lead table CreatedOn for date filtering
-        """
-        try:
-            # ✅ FIX: Filter ACTIVE leads by CreatedOn from Lead table
-            if "CreatedOn" in leads_data.columns and "IsActive" in leads_data.columns:
-                # Filter for active leads first
-                active_leads = leads_data[leads_data["IsActive"] == 1].copy()
-                
-                # Then filter by date range
-                dt_mask = (
-                    (pd.to_datetime(active_leads["CreatedOn"], errors='coerce') >= start_ts) &
-                    (pd.to_datetime(active_leads["CreatedOn"], errors='coerce') <= end_ts)
-                )
-                period_leads = active_leads[dt_mask].copy()
-            else:
-                period_leads = pd.DataFrame()
-            
-            # Filter meetings
-            period_meetings = pd.DataFrame()
-            if not meetings_data.empty and "StartDateTime" in meetings_data.columns:
-                dt_mask = (
-                    (pd.to_datetime(meetings_data["StartDateTime"], errors='coerce') >= start_ts) &
-                    (pd.to_datetime(meetings_data["StartDateTime"], errors='coerce') <= end_ts)
-                )
-                valid_meetings = meetings_data[dt_mask]
-                if "MeetingStatusId" in valid_meetings.columns:
-                    period_meetings = valid_meetings[valid_meetings["MeetingStatusId"].isin([1, 6])]
-            
-            # Calculate metrics
-            total = len(period_leads)
-            won = int(period_leads.get("LeadStatusId", pd.Series(dtype='int64')).eq(won_id).sum()) if total > 0 else 0
-            conv_pct = (won / total * 100.0) if total > 0 else 0.0
-            meetings = int(period_meetings["LeadId"].nunique()) if "LeadId" in period_meetings.columns and len(period_meetings) > 0 else 0
-            
-            return (total, conv_pct, meetings, won)
-            
-        except Exception as e:
-            logger.error(f"Metrics calculation error: {e}")
-            return (0, 0.0, 0, 0)
+def calculate_period_metrics(leads_data: pd.DataFrame, meetings_data: pd.DataFrame, start_ts: pd.Timestamp, end_ts: pd.Timestamp, won_id: int):
+    """
+    Calculate metrics for a time period - FIXED VERSION v2
+    Uses Lead table CreatedOn for date filtering
+    ✅ Filters ACTIVE leads first, then by date
+    """
+    try:
+        # ✅ CRITICAL FIX: Filter for ACTIVE leads FIRST
+        if "IsActive" in leads_data.columns:
+            active_leads = leads_data[leads_data["IsActive"] == 1].copy()
+        else:
+            # If no IsActive column, assume all are active
+            active_leads = leads_data.copy()
+
+        # ✅ STEP 2: Filter active leads by date range
+        if "CreatedOn" in active_leads.columns and len(active_leads) > 0:
+            dt_mask = (
+                (pd.to_datetime(active_leads["CreatedOn"], errors='coerce') >= start_ts) &
+                (pd.to_datetime(active_leads["CreatedOn"], errors='coerce') <= end_ts)
+            )
+            period_leads = active_leads[dt_mask].copy()
+        else:
+            period_leads = pd.DataFrame()
+
+        # Filter meetings for the period
+        period_meetings = pd.DataFrame()
+        if not meetings_data.empty and "StartDateTime" in meetings_data.columns:
+            dt_mask = (
+                (pd.to_datetime(meetings_data["StartDateTime"], errors='coerce') >= start_ts) &
+                (pd.to_datetime(meetings_data["StartDateTime"], errors='coerce') <= end_ts)
+            )
+            valid_meetings = meetings_data[dt_mask]
+            if "MeetingStatusId" in valid_meetings.columns:
+                # Filter for confirmed/scheduled meetings (status 1 or 6)
+                period_meetings = valid_meetings[valid_meetings["MeetingStatusId"].isin([1, 6])]
+
+        # Calculate metrics
+        total = len(period_leads)
+        won = int(period_leads.get("LeadStatusId", pd.Series(dtype='int64')).eq(won_id).sum()) if total > 0 else 0
+        conv_pct = (won / total * 100.0) if total > 0 else 0.0
+        meetings = int(period_meetings["LeadId"].nunique()) if "LeadId" in period_meetings.columns and len(period_meetings) > 0 else 0
+
+        return (total, conv_pct, meetings, won)
+
+    except Exception as e:
+        logger.error(f"Metrics calculation error: {e}")
+        return (0, 0.0, 0, 0)
     # Calculate metrics
     metrics = {}
     for period_name, (start_ts, end_ts) in periods.items():
